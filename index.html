@@ -391,6 +391,7 @@ input,button,select{font-family:inherit;}
     <div id="sbar">
       <div id="sdot"></div>
       <span id="stxt">Scanning… <span id="zbar-status" style="color:#93c5fd;font-size:11px"></span></span>
+      <span id="zbar-indicator" style="color:#fbbf24;font-size:11px;margin-left:8px;display:none">⚡ ZBar</span>
     </div>
 
     <!-- Manual entry -->
@@ -747,11 +748,12 @@ function flipCam(){camIdx=(camIdx+1)%cameras.length;openCam();}
 // ── SCAN ENGINES ──────────────────────────────────────
 
 // Offscreen canvases for image processing
-var oc1=null, oc2=null, oc3=null;
+var oc1=null, oc2=null, oc3=null, oc4=null;
 function getCanvas(id,w,h){
   if(id===1){if(!oc1)oc1=document.createElement('canvas'); oc1.width=w;oc1.height=h;return oc1;}
   if(id===2){if(!oc2)oc2=document.createElement('canvas'); oc2.width=w;oc2.height=h;return oc2;}
-  if(!oc3)oc3=document.createElement('canvas'); oc3.width=w;oc3.height=h;return oc3;
+  if(id===3){if(!oc3)oc3=document.createElement('canvas'); oc3.width=w;oc3.height=h;return oc3;}
+  if(!oc4)oc4=document.createElement('canvas'); oc4.width=w;oc4.height=h;return oc4;
 }
 
 // Greyscale + contrast boost (helps with faded / small DataMatrix)
@@ -787,15 +789,41 @@ function enhanceForQR(src,w,h){
   return c3;
 }
 
+// Enhanced preprocessing for DataMatrix (different contrast settings)
+function enhanceForDataMatrix(src,w,h){
+  var c4=getCanvas(4,w,h);
+  var ctx=c4.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(src,0,0);
+  var id=ctx.getImageData(0,0,w,h), d=id.data;
+  // DataMatrix often needs sharper contrast and edge enhancement
+  for(var i=0;i<d.length;i+=4){
+    var r=d[i], g=d[i+1], b=d[i+2];
+    var lum=0.299*r+0.587*g+0.114*b;
+    // Sharper threshold for DataMatrix
+    var adj=lum<140?0:255;
+    d[i]=d[i+1]=d[i+2]=adj;
+  }
+  ctx.putImageData(id,0,0);
+  return c4;
+}
+
 // ZBar WASM scan — returns first decoded string or null
 async function zbarScan(canvasEl){
-  if(!window._zbarReady||!window._zbarScan) return null;
+  if(!window._zbarReady||!window._zbarScan) {
+    console.warn('[Scanner] ZBar not ready:', {ready: window._zbarReady, scan: !!window._zbarScan});
+    return null;
+  }
   try{
     var ctx=canvasEl.getContext('2d',{willReadFrequently:true});
     var id=ctx.getImageData(0,0,canvasEl.width,canvasEl.height);
     var syms=await window._zbarScan(id);
-    if(syms&&syms.length>0) return syms[0].decode();
-  }catch(e){}
+    if(syms&&syms.length>0) {
+      console.log('[Scanner] ZBar detected:', syms[0].decode(), 'type:', syms[0].type);
+      return syms[0].decode();
+    }
+  }catch(e){
+    console.error('[Scanner] ZBar scan error:', e);
+  }
   return null;
 }
 
@@ -881,6 +909,7 @@ function startRafLoop(){
 async function startZBarLoop(){
   var v=document.getElementById('video');
   var scanCount=0;
+  console.log('[Scanner] ZBar loop starting...');
   while(scanning){
     try{
       if(!zbarBusy && v.readyState===v.HAVE_ENOUGH_DATA && v.videoWidth>0){
@@ -893,11 +922,18 @@ async function startZBarLoop(){
         var r1=await zbarScan(c1);
         if(r1){onCode(r1,'ZBar'); zbarBusy=false; await sleep(60); continue;}
 
-        // Pass A2: enhanced for QR
+        // Pass A2: enhanced for QR/DataMatrix
         try{
           var c1b=enhanceForQR(c1,w,h);
           var r1b=await zbarScan(c1b);
           if(r1b){onCode(r1b,'ZBar+QR'); zbarBusy=false; await sleep(60); continue;}
+        }catch(e){}
+
+        // Pass A3: enhanced specifically for DataMatrix
+        try{
+          var c1d=enhanceForDataMatrix(c1,w,h);
+          var r1d=await zbarScan(c1d);
+          if(r1d){onCode(r1d,'ZBar+DataMatrix'); zbarBusy=false; await sleep(60); continue;}
         }catch(e){}
 
         // Pass B: contrast-boosted (good for faded/small DataMatrix)
@@ -924,7 +960,11 @@ async function startZBarLoop(){
 
         zbarBusy=false;
         scanCount++;
-        if(scanCount%8===0) console.log('[Scanner] ZBar loop active, ready:', window._zbarReady);
+        if(scanCount%8===0) {
+          console.log('[Scanner] ZBar loop active, ready:', window._zbarReady, 'frames processed:', scanCount);
+          document.getElementById('zbar-indicator').style.display='inline';
+          setTimeout(function(){document.getElementById('zbar-indicator').style.display='none';}, 500);
+        }
       }
     }catch(e){
       console.error('[Scanner] ZBar loop error:', e);
@@ -932,6 +972,7 @@ async function startZBarLoop(){
     }
     await sleep(60); // ~17fps for ZBar
   }
+  console.log('[Scanner] ZBar loop stopped');
 }
 
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
@@ -965,6 +1006,22 @@ function scanDiagnostics(){
     ZBar: window._zbarReady===true
   });
   console.log('Camera stream tracks:', camStream? camStream.getTracks().length : 0);
+  console.log('ZBar busy state:', zbarBusy);
+}
+
+// Test DataMatrix scanning specifically
+function testDataMatrix(){
+  console.log('=== TESTING DATAMATRIX SCANNING ===');
+  if(!window._zbarReady){
+    console.error('ZBar not ready - DataMatrix scanning will not work');
+    return;
+  }
+  if(!scanning){
+    console.error('Scanner not active - start camera first');
+    return;
+  }
+  console.log('DataMatrix test: Point camera at a DataMatrix code');
+  console.log('Watch console for ZBar detection logs...');
 }
 
 function onCode(code,engine){
