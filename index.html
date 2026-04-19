@@ -1,0 +1,2556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>Inventory Scanner</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<!-- ZBar WASM — best DataMatrix/GS1 support in browser -->
+<script type="module">
+  import { scanImageData } from 'https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.10.1/dist/main.js';
+  window._zbarScan = scanImageData;
+  window._zbarReady = true;
+  console.log('ZBar WASM loaded ✓');
+</script>
+<style>
+:root{
+  --bg:#f0f4ff;
+  --surface:#ffffff;
+  --surface2:#f8faff;
+  --border:#e2e8f0;
+  --border2:#cbd5e1;
+  --text:#1e293b;
+  --text2:#475569;
+  --text3:#94a3b8;
+  --amber:#f59e0b;
+  --amber-bg:#fffbeb;
+  --amber-border:#fde68a;
+  --blue:#2563eb;
+  --blue-bg:#eff6ff;
+  --blue-border:#bfdbfe;
+  --green:#16a34a;
+  --green-bg:#f0fdf4;
+  --green-border:#bbf7d0;
+  --red:#dc2626;
+  --red-bg:#fef2f2;
+  --red-border:#fecaca;
+  --shadow:0 1px 3px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.06);
+  --shadow-md:0 4px 20px rgba(0,0,0,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);
+  min-height:100svh;display:flex;flex-direction:column;max-width:480px;margin:0 auto;overflow-x:hidden;}
+input,button,select{font-family:inherit;}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
+
+/* ── HEADER ── */
+#hdr{
+  background:var(--surface);
+  border-bottom:3px solid var(--amber);
+  padding:14px 18px;
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:200;
+  box-shadow:0 2px 12px rgba(245,158,11,.15);
+}
+.logo{display:flex;align-items:center;gap:12px;}
+.li{
+  width:42px;height:42px;
+  background:linear-gradient(135deg,#f59e0b,#f97316);
+  border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-size:20px;box-shadow:0 3px 10px rgba(245,158,11,.4);
+}
+.ln{font-size:17px;font-weight:800;color:var(--text);letter-spacing:-.3px;}
+.ls{font-size:11px;color:var(--text3);letter-spacing:.5px;font-weight:500;}
+#badge{
+  border-radius:20px;padding:5px 14px;font-size:13px;font-weight:600;
+  border:2px solid var(--border);color:var(--text3);background:var(--surface2);transition:all .3s;
+}
+#badge.on{background:var(--green-bg);border-color:var(--green-border);color:var(--green);}
+
+/* ── NAV ── */
+#nav{
+  position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;
+  background:var(--surface);border-top:2px solid var(--border);display:flex;z-index:200;
+  box-shadow:0 -4px 20px rgba(0,0,0,.08);
+}
+.nb{
+  flex:1;background:none;border:none;padding:12px 8px 10px;color:var(--text3);cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  border-top:3px solid transparent;margin-top:-2px;transition:all .2s;
+}
+.nb.active{color:var(--blue);border-top-color:var(--blue);}
+.nbi{font-size:21px;}
+.nbl{font-size:10px;letter-spacing:.5px;font-weight:600;}
+
+/* ── MAIN ── */
+#main{flex:1;overflow-y:auto;padding-bottom:82px;}
+.tab{display:none;}.tab.active{display:block;}
+
+/* ── CAMERA ── */
+#cam-wrap{
+  position:relative;background:#1a1a2e;overflow:hidden;height:300px;
+  display:flex;align-items:center;justify-content:center;
+}
+#video{width:100%;height:100%;object-fit:cover;display:none;position:absolute;inset:0;}
+#canvas{display:none;position:absolute;}
+
+#cam-ph{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:16px;
+  background:linear-gradient(160deg,#1a1a2e 0%,#16213e 60%,#0f3460 100%);
+  padding:20px;text-align:center;z-index:2;
+}
+#cam-err{
+  position:absolute;inset:0;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:12px;
+  background:rgba(20,20,40,.97);padding:24px;text-align:center;z-index:3;
+}
+
+/* Scan overlay */
+#overlay{position:absolute;inset:0;pointer-events:none;display:none;z-index:2;}
+.corner{position:absolute;width:28px;height:28px;}
+.c-tl{top:16%;left:10%;border-top:3px solid #fff;border-left:3px solid #fff;border-radius:2px 0 0 0;}
+.c-tr{top:16%;right:10%;border-top:3px solid #fff;border-right:3px solid #fff;border-radius:0 2px 0 0;}
+.c-bl{bottom:16%;left:10%;border-bottom:3px solid #fff;border-left:3px solid #fff;border-radius:0 0 0 2px;}
+.c-br{bottom:16%;right:10%;border-bottom:3px solid #fff;border-right:3px solid #fff;border-radius:0 0 2px 0;}
+.sbox{position:absolute;left:10%;right:10%;top:16%;bottom:16%;
+  border:1px solid rgba(255,255,255,.2);border-radius:6px;overflow:hidden;}
+#sline{position:absolute;left:0;right:0;height:3px;top:0;
+  background:linear-gradient(90deg,transparent,#f59e0b,#fff,#f59e0b,transparent);
+  animation:sa 1.8s ease-in-out infinite;}
+@keyframes sa{0%{top:0;opacity:1}100%{top:100%;opacity:.4}}
+#flash{position:absolute;inset:0;background:rgba(245,158,11,.35);opacity:0;pointer-events:none;}
+
+.cam-ctrl{position:absolute;bottom:14px;left:0;right:0;display:flex;justify-content:center;gap:10px;z-index:3;}
+.bstart{
+  background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;border:none;
+  border-radius:28px;padding:13px 34px;font-size:15px;font-weight:700;cursor:pointer;
+  letter-spacing:.3px;box-shadow:0 4px 16px rgba(245,158,11,.5);
+}
+.bstop{
+  background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;
+  border-radius:28px;padding:13px 28px;font-size:15px;font-weight:700;cursor:pointer;
+  box-shadow:0 4px 14px rgba(220,38,38,.4);display:none;
+}
+.bflip{
+  background:rgba(255,255,255,.15);backdrop-filter:blur(8px);color:#fff;
+  border:1px solid rgba(255,255,255,.3);border-radius:28px;
+  padding:13px 18px;font-size:15px;cursor:pointer;display:none;
+}
+
+/* Photo scan button */
+.bphoto{
+  background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;
+  border-radius:28px;padding:13px 28px;font-size:15px;font-weight:700;cursor:pointer;
+  box-shadow:0 4px 16px rgba(124,58,237,.45);display:flex;align-items:center;gap:8px;
+}
+/* Photo processing overlay */
+#photo-processing{
+  position:fixed;inset:0;background:rgba(15,23,42,.85);z-index:2000;
+  display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  backdrop-filter:blur(6px);
+}
+.proc-spinner{
+  width:52px;height:52px;border:4px solid rgba(255,255,255,.2);
+  border-top-color:#f59e0b;border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* Photo preview strip */
+#photo-preview{
+  background:var(--surface);border:2px solid var(--blue-border);border-radius:14px;
+  padding:10px;margin:12px 16px 0;display:none;position:relative;
+}
+#photo-preview img{width:100%;border-radius:10px;max-height:180px;object-fit:contain;background:#f1f5f9;}
+#photo-preview-close{
+  position:absolute;top:6px;right:6px;background:#ef4444;color:#fff;border:none;
+  border-radius:50%;width:26px;height:26px;font-size:14px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+}
+  background:var(--blue-bg);border-bottom:1px solid var(--blue-border);
+  padding:8px 16px;font-size:13px;color:var(--blue);
+  display:none;align-items:center;gap:8px;font-weight:500;
+}
+#sdot{width:9px;height:9px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite;flex-shrink:0;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+
+/* ── MANUAL BAR ── */
+.mbar{padding:16px;border-bottom:2px solid var(--border);background:var(--surface);}
+.slbl{font-size:11px;color:var(--text3);letter-spacing:1px;margin-bottom:8px;font-weight:600;text-transform:uppercase;}
+.row{display:flex;gap:8px;}
+.ci{
+  flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:12px;
+  padding:12px 15px;color:var(--text);font-size:15px;outline:none;transition:border-color .2s;
+}
+.ci:focus{border-color:var(--blue);background:#fff;box-shadow:0 0 0 3px rgba(37,99,235,.1);}
+.bblue{
+  background:linear-gradient(135deg,#2563eb,#1d4ed8);border:none;border-radius:12px;
+  color:#fff;padding:12px 18px;cursor:pointer;font-size:18px;
+  box-shadow:0 3px 10px rgba(37,99,235,.35);
+}
+
+/* ── RESULT AREA ── */
+.rwrap{padding:16px;}
+.cpill{
+  background:var(--surface);border:2px solid var(--border);border-radius:12px;
+  padding:10px 15px;margin-bottom:12px;font-size:13px;font-weight:500;
+  display:flex;align-items:center;gap:8px;box-shadow:var(--shadow);
+}
+.found{
+  background:var(--surface);border:2px solid var(--green-border);
+  border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(22,163,74,.12);
+}
+.fhdr{
+  background:linear-gradient(135deg,#dcfce7,#bbf7d0);
+  padding:13px 16px;display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid var(--green-border);
+}
+.fbody{padding:4px 16px 8px;}
+.frow{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:11px 0;border-bottom:1px solid var(--border);
+}
+.frow:last-child{border-bottom:none;}
+.fk{color:var(--text3);font-size:12px;letter-spacing:.5px;flex:0 0 42%;text-transform:uppercase;font-weight:600;}
+.fv{font-weight:700;font-size:15px;text-align:right;flex:0 0 56%;word-break:break-word;color:var(--text);}
+.nfcard{
+  background:var(--red-bg);border:2px solid var(--red-border);
+  border-radius:14px;padding:28px 20px;text-align:center;
+  box-shadow:0 4px 16px rgba(220,38,38,.08);
+}
+.hint{
+  padding:32px 20px;text-align:center;color:var(--text3);font-size:15px;
+  line-height:1.9;font-weight:500;
+}
+
+/* ── FUZZY MATCH PICKER ── */
+.fuzzy-picker{
+  background:#fff;border:2px solid #fde68a;border-radius:12px;
+  margin-top:12px;overflow:hidden;
+}
+.fuzzy-picker-hdr{
+  background:linear-gradient(135deg,#fffbeb,#fef9c3);
+  padding:10px 14px;border-bottom:1px solid #fde68a;
+  display:flex;align-items:center;gap:8px;
+}
+.fuzzy-option{
+  padding:12px 14px;cursor:pointer;border-bottom:1px solid #f1f5f9;
+  display:flex;justify-content:space-between;align-items:center;
+  transition:background .15s;
+}
+.fuzzy-option:last-child{border-bottom:none;}
+.fuzzy-option:hover,.fuzzy-option:active{background:#fffbeb;}
+.fuzzy-score{
+  font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;
+  white-space:nowrap;flex-shrink:0;margin-left:8px;
+}
+.score-high{background:#dcfce7;color:#15803d;}
+.score-med {background:#fef9c3;color:#92400e;}
+.score-low {background:#fee2e2;color:#991b1b;}
+
+/* ── CS-NAME AUTOCOMPLETE ── */
+.cs-ac-item{
+  padding:10px 14px;cursor:pointer;border-bottom:1px solid #dcfce7;
+  transition:background .12s;
+}
+.cs-ac-item:last-child{border-bottom:none;}
+.cs-ac-item:hover{background:#f0fdf4;}
+
+/* ── CLOUD DB ── */
+#cloud-indicator{display:none;}
+
+/* ── GS1 PANEL ── */
+.gs1-panel{
+  background:linear-gradient(135deg,#eff6ff,#f0fdf4);
+  border:2px solid #bfdbfe;border-radius:12px;
+  margin-bottom:12px;overflow:hidden;
+}
+.gs1-hdr{
+  background:linear-gradient(135deg,#1d4ed8,#2563eb);
+  padding:10px 15px;display:flex;align-items:center;gap:8px;
+}
+.gs1-body{padding:4px 15px 10px;}
+.gs1-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:8px 0;border-bottom:1px solid rgba(37,99,235,.1);
+}
+.gs1-row:last-child{border-bottom:none;}
+.gs1-ai{
+  display:inline-flex;align-items:center;gap:6px;
+  flex:0 0 42%;
+}
+.gs1-ai-badge{
+  background:#1d4ed8;color:#fff;font-size:10px;font-weight:700;
+  padding:2px 6px;border-radius:6px;letter-spacing:.5px;
+}
+.gs1-ai-label{color:var(--text3);font-size:11px;font-weight:600;text-transform:uppercase;}
+.gs1-val{font-weight:700;font-size:14px;color:var(--text);text-align:right;flex:0 0 56%;word-break:break-all;}
+.gs1-val.gtin{color:#1d4ed8;font-size:15px;}
+.gs1-val.expiry{color:#dc2626;}
+.gs1-val.expiry.ok{color:#16a34a;}
+.gs1-val.batch{color:#d97706;}
+.gs1-val.serial{color:#7c3aed;font-size:12px;}
+/* Raw scan pill */
+.raw-pill{
+  background:#f8faff;border:1px solid var(--border);border-radius:8px;
+  padding:7px 12px;font-size:11px;color:var(--text3);
+  word-break:break-all;line-height:1.6;margin-bottom:10px;
+}
+.ac-wrap{position:relative;}
+#ac-list{
+  position:absolute;left:0;right:0;top:100%;margin-top:4px;
+  background:var(--surface);border:2px solid var(--blue-border);border-radius:12px;
+  box-shadow:0 8px 32px rgba(37,99,235,.15);z-index:500;
+  max-height:220px;overflow-y:auto;display:none;
+}
+.ac-item{
+  padding:11px 15px;font-size:14px;cursor:pointer;border-bottom:1px solid var(--border);
+  transition:background .15s;display:flex;flex-direction:column;gap:2px;
+}
+.ac-item:last-child{border-bottom:none;}
+.ac-item:hover,.ac-item:active{background:var(--blue-bg);}
+.ac-name{color:var(--text);font-weight:600;font-size:14px;}
+.ac-sub{color:var(--text3);font-size:12px;}
+.ac-match{color:var(--blue);font-weight:700;}
+
+/* ── INVENTORY ── */
+.ivwrap{padding:16px;}
+.ivtb{display:flex;gap:8px;margin-bottom:14px;}
+.si{
+  flex:1;background:var(--surface);border:2px solid var(--border);border-radius:12px;
+  padding:12px 15px;color:var(--text);font-size:15px;outline:none;transition:border-color .2s;
+}
+.si:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.1);}
+.bro{
+  background:var(--red-bg);border:2px solid var(--red-border);border-radius:12px;
+  color:var(--red);padding:12px 14px;cursor:pointer;font-size:14px;white-space:nowrap;font-weight:600;
+}
+.icnt{font-size:12px;color:var(--text3);letter-spacing:.5px;margin-bottom:10px;font-weight:600;}
+.iitem{
+  background:var(--surface);border:2px solid var(--border);border-radius:14px;
+  padding:14px 15px;margin-bottom:10px;cursor:pointer;
+  display:flex;justify-content:space-between;align-items:center;
+  transition:all .2s;box-shadow:var(--shadow);
+}
+.iitem:active,.iitem:hover{border-color:var(--blue);box-shadow:0 4px 16px rgba(37,99,235,.1);}
+.icode{color:var(--blue);font-size:15px;font-weight:700;margin-bottom:3px;}
+.imeta{color:var(--text3);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bdel{
+  background:var(--red-bg);border:1px solid var(--red-border);border-radius:8px;
+  color:var(--red);cursor:pointer;font-size:14px;padding:6px 10px;flex-shrink:0;
+}
+
+/* ── IMPORT ── */
+.impwrap{padding:18px;}
+.drop{
+  border:2.5px dashed var(--border2);border-radius:18px;padding:40px 20px;text-align:center;
+  cursor:pointer;margin-bottom:18px;background:var(--surface);transition:all .2s;
+  box-shadow:var(--shadow);
+}
+.drop:active,.drop:hover{border-color:var(--amber);background:var(--amber-bg);}
+.fbox{
+  background:var(--surface);border:2px solid var(--border);border-radius:14px;
+  padding:16px;margin-bottom:14px;box-shadow:var(--shadow);
+}
+.ftitle{color:var(--amber);font-size:13px;font-weight:700;margin-bottom:10px;letter-spacing:.5px;}
+.frow2{display:flex;gap:12px;font-size:13px;padding:7px 0;border-bottom:1px solid var(--border);}
+.frow2:last-child{border-bottom:none;}
+.fk2{color:var(--blue);flex:0 0 90px;font-weight:600;}
+.fv2{color:var(--text2);}
+.lbox{
+  background:var(--green-bg);border:2px solid var(--green-border);
+  border-radius:14px;padding:16px;box-shadow:var(--shadow);
+}
+.ltitle{color:var(--green);font-size:13px;font-weight:700;margin-bottom:8px;letter-spacing:.5px;}
+.bclr{
+  width:100%;background:var(--red-bg);border:2px solid var(--red-border);border-radius:12px;
+  color:var(--red);padding:12px;cursor:pointer;font-size:14px;margin-top:14px;font-weight:600;
+}
+
+/* ── TOAST ── */
+#toast{
+  position:fixed;top:72px;left:50%;transform:translateX(-50%);
+  border-radius:12px;padding:11px 20px;font-size:14px;z-index:9999;
+  max-width:320px;text-align:center;display:none;
+  box-shadow:0 8px 32px rgba(0,0,0,.18);white-space:pre-line;font-weight:600;
+}
+
+/* ── MODALS ── */
+.mbg{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:1000;
+  display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);}
+.mbg.bot{align-items:flex-end;padding:0;}
+.mbox{
+  background:var(--surface);border:2px solid var(--border);border-radius:20px;
+  padding:26px;max-width:310px;width:100%;text-align:center;
+  box-shadow:0 20px 60px rgba(0,0,0,.2);
+}
+.msheet{
+  background:var(--surface);border-top:2px solid var(--border);
+  border-top-left-radius:24px;border-top-right-radius:24px;
+  width:100%;max-width:480px;max-height:82vh;overflow-y:auto;
+  box-shadow:0 -8px 40px rgba(0,0,0,.15);
+}
+.mhdr{
+  background:var(--surface2);padding:15px 20px;
+  display:flex;justify-content:space-between;align-items:center;
+  border-bottom:2px solid var(--border);
+  border-top-left-radius:22px;border-top-right-radius:22px;
+}
+.mbody{padding:18px 20px;}
+.mfoot{padding:0 20px 20px;display:flex;gap:10px;}
+.bcancel{
+  flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:12px;
+  color:var(--text2);padding:12px;cursor:pointer;font-size:14px;font-weight:600;
+}
+.bdel2{
+  background:var(--red-bg);border:2px solid var(--red-border);border-radius:12px;
+  color:var(--red);padding:12px;cursor:pointer;font-size:14px;font-weight:700;
+}
+.blook{
+  flex:1;background:linear-gradient(135deg,#2563eb,#1d4ed8);border:none;border-radius:12px;
+  color:#fff;padding:12px;cursor:pointer;font-size:14px;font-weight:600;
+}
+.bdel3{
+  background:var(--red-bg);border:2px solid var(--red-border);border-radius:12px;
+  color:var(--red);padding:12px;cursor:pointer;font-size:14px;font-weight:600;
+}
+.xb{background:none;border:none;color:var(--text3);cursor:pointer;font-size:20px;line-height:1;}
+
+/* ── EMPTY STATE ── */
+.empty-state{text-align:center;padding:60px 20px;color:var(--text3);}
+.empty-state div:first-child{font-size:56px;margin-bottom:16px;}
+.empty-state p{font-size:15px;line-height:1.8;font-weight:500;}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="hdr">
+  <div class="logo">
+    <div class="li">📦</div>
+    <div>
+      <div class="ln">Inventory Scanner</div>
+      <div class="ls">GS1 · MATRIX · BARCODE</div>
+    </div>
+  </div>
+  <div id="badge">0 items</div>
+  <div style="display:flex;gap:6px;align-items:center">
+    <div id="json-badge" style="display:none;background:linear-gradient(135deg,#faf5ff,#ede9fe);border:1.5px solid #c4b5fd;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;color:#6d28d9">
+      🗃️ <span id="json-badge-count">0</span>
+    </div>
+    <div id="cloud-indicator" style="display:none;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1.5px solid #86efac;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;color:#16a34a">
+      🐙 <span id="cloud-count">0</span>
+    </div>
+  </div>
+</div>
+
+<div id="main">
+
+  <!-- ── SCAN TAB ── -->
+  <div class="tab active" id="tab-scan">
+
+    <!-- Camera -->
+    <div id="cam-wrap">
+      <video id="video" muted playsinline></video>
+      <canvas id="canvas"></canvas>
+
+      <!-- Hidden native camera input -->
+      <input id="photo-input" type="file" accept="image/*" capture="environment"
+        style="display:none" onchange="handlePhoto(event)"/>
+
+      <!-- Placeholder -->
+      <div id="cam-ph">
+        <div style="font-size:52px;filter:drop-shadow(0 4px 12px rgba(245,158,11,.5))">📷</div>
+        <div style="color:rgba(255,255,255,.7);font-size:14px;line-height:1.8;font-weight:500;margin-bottom:4px">
+          QR · EAN · UPC · Code128 · <strong style="color:#f59e0b">DataMatrix · GS1</strong>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;align-items:center;width:100%">
+          <button class="bstart" onclick="startCam()">▶ Live Scanner</button>
+          <button class="bphoto" onclick="document.getElementById('photo-input').click()">
+            📸 Take Photo to Scan
+          </button>
+        </div>
+        <div style="font-size:11px;color:rgba(255,255,255,.28);margin-top:4px;text-align:center;line-height:1.7">
+          Use <strong style="color:rgba(255,255,255,.5)">Take Photo</strong> for DataMatrix &amp; small codes<br>
+          for best results
+        </div>
+      </div>
+
+      <!-- Scan overlay -->
+      <div id="overlay">
+        <div class="corner c-tl"></div><div class="corner c-tr"></div>
+        <div class="corner c-bl"></div><div class="corner c-br"></div>
+        <div class="sbox"><div id="sline"></div></div>
+        <div id="flash"></div>
+      </div>
+
+      <!-- Error -->
+      <div id="cam-err">
+        <div style="font-size:44px">🚫</div>
+        <div id="cem" style="color:#f87171;font-size:15px;line-height:1.6;font-weight:600"></div>
+        <button class="bstart" style="margin-top:8px" onclick="retryCam()">↩ Retry</button>
+      </div>
+
+      <!-- Live camera controls -->
+      <div class="cam-ctrl" id="cctrl" style="display:none">
+        <button class="bflip" id="bflip" onclick="flipCam()">🔄 Flip</button>
+        <button class="bphoto" style="padding:10px 16px;font-size:14px" onclick="document.getElementById('photo-input').click()">📸</button>
+        <button class="bstop" id="bstop" onclick="stopCam()">⏹ Stop</button>
+      </div>
+    </div>
+
+    <!-- Photo preview strip (shown after capture) -->
+    <div id="photo-preview">
+      <button id="photo-preview-close" onclick="closePhotoPreview()">✕</button>
+      <img id="photo-img" src="" alt="Captured"/>
+      <div id="photo-result-msg" style="text-align:center;font-size:13px;margin-top:8px;font-weight:600;color:var(--text2)"></div>
+    </div>
+
+    <!-- Status bar -->
+    <div id="sbar">
+      <div id="sdot"></div>
+      <span id="stxt">Scanning… <span id="zbar-status" style="color:#93c5fd;font-size:11px"></span></span>
+    </div>
+
+    <!-- Manual entry -->
+    <div class="mbar">
+      <div class="slbl">⌨️ Item Code Search <span style="font-size:10px;color:#cbd5e1">(Column 1)</span></div>
+      <div class="row">
+        <input class="ci" id="min" placeholder="Enter item code…"
+          onkeydown="if(event.key==='Enter')doManual()"/>
+        <button class="bblue" onclick="doManual()">🔍</button>
+      </div>
+    </div>
+
+    <!-- Name search with autocomplete -->
+    <div class="mbar" style="border-bottom:2px solid var(--border);background:var(--surface2);">
+      <div class="slbl">🔤 Item Name Search <span style="font-size:10px;color:#cbd5e1">(Column 3)</span></div>
+      <div class="ac-wrap">
+        <div class="row">
+          <input class="ci" id="nin" placeholder="Type item name…"
+            oninput="onNameInput()" onkeydown="onNameKey(event)" autocomplete="off"/>
+          <button class="bblue" style="background:linear-gradient(135deg,#7c3aed,#6d28d9)" onclick="doNameSearch()">🔤</button>
+        </div>
+        <div id="ac-list"></div>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div id="res" style="display:none" class="rwrap">
+      <div class="slbl">Result</div>
+      <div class="cpill">
+        <span id="res-mode-lbl" style="color:var(--text3);font-size:11px;letter-spacing:.5px">CODE:</span>
+        <span id="lcode" style="color:var(--blue);font-weight:700;font-size:15px;letter-spacing:.3px"></span>
+        <span id="res-mode-badge" style="margin-left:6px;font-size:10px;padding:3px 9px;border-radius:10px;border:1.5px solid;font-weight:600"></span>
+        <button class="xb" style="margin-left:auto" onclick="clearRes()">✕</button>
+      </div>
+
+      <!-- Not found -->
+      <div id="nfc" class="nfcard" style="display:none">
+        <div style="font-size:40px;margin-bottom:10px">❌</div>
+        <div style="color:var(--red);font-weight:700;font-size:17px">Product Not Found</div>
+        <div id="nfm" style="color:#ef4444;font-size:14px;margin-top:6px;font-weight:500"></div>
+        <!-- Show GS1 data even when product not in inventory -->
+        <div id="nf-gs1" style="display:none;margin-top:14px;text-align:left;"></div>
+
+        <!-- Save to GitHub DB -->
+        <div id="cloud-save-form" style="display:none;margin-top:16px;text-align:left;background:#fff;border-radius:12px;padding:14px;border:2px solid #86efac">
+          <div style="font-size:12px;font-weight:700;color:#16a34a;letter-spacing:.5px;margin-bottom:4px">🐙 ADD TO GITHUB DATABASE</div>
+          <div style="font-size:11px;color:#64748b;margin-bottom:10px;line-height:1.6">
+            GTIN: <strong id="gh-save-gtin" style="color:#1d4ed8"></strong>
+          </div>
+          <!-- Name input with Excel autocomplete -->
+          <div style="position:relative;margin-bottom:8px">
+            <input class="ci" id="cs-name"
+              placeholder="Type product name (auto-suggests from Excel)…"
+              style="width:100%;font-size:14px;padding-right:36px"
+              oninput="csNameInput(this.value)"
+              onchange="csNameInput(this.value)"
+              onfocus="if(this.value)csNameInput(this.value)"
+              onkeydown="csNameKey(event)"
+              autocomplete="off"/>
+            <span id="cs-name-clear" onclick="csNameClear()"
+              style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);
+              cursor:pointer;font-size:17px;color:#94a3b8;line-height:1">✕</span>
+            <!-- Autocomplete dropdown — position:fixed to escape overflow clipping -->
+            <div id="cs-ac-list" style="
+              display:none;position:fixed;
+              background:#fff;border:2px solid #86efac;border-radius:12px;
+              box-shadow:0 8px 28px rgba(22,163,74,.22);z-index:2000;
+              max-height:220px;overflow-y:auto;min-width:240px;">
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button onclick="saveToGithub()" style="flex:1;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">
+              🐙 Save to GitHub
+            </button>
+            <button onclick="closeCsSaveForm()" style="background:var(--surface2);border:2px solid var(--border);border-radius:10px;padding:12px 14px;cursor:pointer;font-size:14px">✕</button>
+          </div>
+          <div id="cs-status" style="margin-top:8px;font-size:13px;font-weight:600;text-align:center"></div>
+          <div id="gh-no-token-msg" style="display:none;margin-top:8px;font-size:12px;color:#d97706;text-align:center">
+            ⚠️ Set up GitHub token in the GitHub DB tab to save new products.
+          </div>
+        </div>
+
+        <!-- GitHub found card -->
+        <div id="cloud-found-card" style="display:none;margin-top:14px;background:#f0fdf4;border:2px solid #86efac;border-radius:12px;padding:14px;text-align:left">
+          <div style="font-size:12px;font-weight:700;color:#16a34a;letter-spacing:.5px;margin-bottom:8px">🐙 FOUND IN GITHUB DATABASE</div>
+          <div id="cloud-found-fields"></div>
+        </div>
+
+        <!-- Fuzzy "Did you mean?" picker -->
+        <div id="fuzzy-picker" style="display:none;margin-top:12px">
+          <div class="fuzzy-picker">
+            <div class="fuzzy-picker-hdr">
+              <span style="font-size:16px">🔍</span>
+              <div>
+                <div style="font-weight:700;font-size:13px;color:#92400e">Did you mean?</div>
+                <div id="fuzzy-subtitle" style="font-size:11px;color:#a16207;margin-top:1px"></div>
+              </div>
+            </div>
+            <div id="fuzzy-options"></div>
+            <div style="padding:10px 14px;border-top:1px solid #fde68a">
+              <button onclick="pickNoneMatch()"
+                style="width:100%;background:#fff;border:1.5px solid #d1d5db;border-radius:8px;
+                padding:9px;font-size:13px;color:#64748b;cursor:pointer;font-family:inherit;font-weight:600">
+                ➕ None of these — add to GitHub DB
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- JSON DB result -->
+        <div id="json-found-card" style="display:none;margin-top:14px;background:#faf5ff;border:2px solid #c4b5fd;border-radius:12px;padding:14px;text-align:left">
+          <div style="font-size:12px;font-weight:700;color:#6d28d9;letter-spacing:.5px;margin-bottom:8px">🗃️ FOUND IN JSON DATABASE</div>
+          <div id="json-found-fields"></div>
+        </div>
+      </div>
+
+      <!-- GS1 DataMatrix info panel (shown when GS1 code scanned) -->
+      <div id="gs1-panel" class="gs1-panel" style="display:none">
+        <div class="gs1-hdr">
+          <span style="font-size:17px">🏷️</span>
+          <span style="color:#fff;font-weight:700;font-size:14px;letter-spacing:.3px">GS1 DataMatrix Decoded</span>
+          <span id="gs1-ai-count" style="margin-left:auto;background:rgba(255,255,255,.2);color:#fff;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600"></span>
+        </div>
+        <div class="gs1-body" id="gs1-fields"></div>
+      </div>
+
+      <!-- Found -->
+      <div id="fcard" class="found" style="display:none">
+        <div class="fhdr">
+          <span style="font-size:22px">✅</span>
+          <span style="color:var(--green);font-weight:700;font-size:16px">Product Found</span>
+        </div>
+        <div class="fbody" id="ffields"></div>
+      </div>
+    </div>
+
+    <div id="hint" class="hint">
+      🔖<br>
+      📷 <strong>Camera</strong> → Barcode <span style="color:var(--text3);font-size:13px">(col 2)</span><br>
+      ⌨️ <strong>Item Code</strong> → Manual search <span style="color:var(--text3);font-size:13px">(col 1)</span><br>
+      🔤 <strong>Name</strong> → Auto-suggest search <span style="color:var(--text3);font-size:13px">(col 3)</span>
+    </div>
+  </div>
+
+  <!-- ── INVENTORY TAB ── -->
+  <div class="tab" id="tab-inventory">
+    <div class="ivwrap">
+      <div class="ivtb">
+        <input class="si" id="search" placeholder="🔍  Search products…" oninput="renderInv()"/>
+        <button class="bro" id="bca" style="display:none" onclick="confirmClear()">🗑 All</button>
+      </div>
+      <div id="ie" class="empty-state">
+        <div>📋</div>
+        <p>No inventory loaded<br><span style="font-size:13px;color:#cbd5e1">Import an Excel file first</span></p>
+      </div>
+      <div id="ic" class="icnt" style="display:none"></div>
+      <div id="il"></div>
+    </div>
+  </div>
+
+  <!-- ── IMPORT TAB ── -->
+  <div class="tab" id="tab-import">
+    <div class="impwrap">
+      <div class="slbl" style="margin-bottom:16px">Import Inventory</div>
+
+      <div class="drop" onclick="document.getElementById('fi').click()">
+        <div style="font-size:52px;margin-bottom:14px">📊</div>
+        <div style="color:var(--text);font-size:16px;margin-bottom:6px;font-weight:700">Tap to Import Excel / CSV</div>
+        <div style="color:var(--text3);font-size:14px;line-height:1.8">.xlsx · .xls · .csv supported</div>
+      </div>
+      <input id="fi" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importFile(event)"/>
+
+      <div class="fbox">
+        <div class="ftitle">📋 EXCEL FORMAT</div>
+        <div class="frow2"><span class="fk2">Column 1</span><span class="fv2">⌨️ Item Code — manual search</span></div>
+        <div class="frow2"><span class="fk2">Column 2</span><span class="fv2">📷 Barcode — camera scan</span></div>
+        <div class="frow2"><span class="fk2">Column 3</span><span class="fv2">🔤 Item Name — name search</span></div>
+        <div class="frow2"><span class="fk2">Column 4+</span><span class="fv2">Price, Qty, and other info</span></div>
+        <div class="frow2"><span class="fk2">Row 1</span><span class="fv2">Column headers</span></div>
+        <div class="frow2"><span class="fk2">Row 2+</span><span class="fv2">Product data</span></div>
+      </div>
+
+      <div class="lbox" id="lbox" style="display:none">
+        <div class="ltitle">✓ LOADED INVENTORY</div>
+        <div id="li2" style="font-size:14px;color:var(--green);margin-bottom:4px;font-weight:600"></div>
+        <div id="lc2" style="font-size:12px;color:var(--text3)"></div>
+        <button class="bclr" onclick="confirmClear()">🗑 Clear All Inventory</button>
+      </div>
+
+      <!-- JSON DATABASE SECTION -->
+      <div style="height:1px;background:var(--border);margin:20px 0"></div>
+      <div class="slbl" style="margin-bottom:14px">🗃️ JSON Database</div>
+
+      <div class="drop" style="border-color:#7c3aed;background:linear-gradient(135deg,#faf5ff,#f5f3ff)"
+        onclick="document.getElementById('fj').click()">
+        <div style="font-size:44px;margin-bottom:10px">📂</div>
+        <div style="color:#4c1d95;font-size:15px;font-weight:700;margin-bottom:6px">Import products.json</div>
+        <div style="color:#7c3aed;font-size:13px;line-height:1.8">
+          Format: <code style="background:#ede9fe;padding:2px 6px;border-radius:4px">{"GTIN":"Product Name"}</code><br>
+          or <code style="background:#ede9fe;padding:2px 6px;border-radius:4px">{"GTIN":{"name":"…","brand":"…"}}</code>
+        </div>
+      </div>
+      <input id="fj" type="file" accept=".json" style="display:none" onchange="importJson(event)"/>
+
+      <!-- JSON DB loaded status -->
+      <div id="json-lbox" style="display:none;background:#faf5ff;border:2px solid #c4b5fd;border-radius:14px;padding:16px;">
+        <div style="color:#6d28d9;font-size:13px;font-weight:700;margin-bottom:8px;letter-spacing:.5px">✓ JSON DATABASE LOADED</div>
+        <div id="json-stats" style="font-size:14px;color:#4c1d95;font-weight:600;margin-bottom:4px"></div>
+        <div id="json-sample" style="font-size:11px;color:#7c3aed;margin-bottom:10px;line-height:1.7"></div>
+        <button style="width:100%;background:#fef2f2;border:2px solid #fecaca;border-radius:10px;color:#dc2626;padding:10px;cursor:pointer;font-size:13px;font-weight:600" onclick="clearJsonDb()">
+          🗑 Clear JSON Database
+        </button>
+      </div>
+
+      <!-- JSON format guide -->
+      <div class="fbox" style="margin-top:14px">
+        <div class="ftitle" style="color:#7c3aed">🗃️ JSON FORMAT GUIDE</div>
+        <div class="frow2">
+          <span class="fk2" style="color:#7c3aed">Simple</span>
+          <span class="fv2"><code style="font-size:11px">{"06281…":"Panadol 500mg"}</code></span>
+        </div>
+        <div class="frow2">
+          <span class="fk2" style="color:#7c3aed">Detailed</span>
+          <span class="fv2"><code style="font-size:11px">{"06281…":{"name":"Panadol","brand":"GSK","unit":"500mg"}}</code></span>
+        </div>
+        <div class="frow2">
+          <span class="fk2" style="color:#7c3aed">Key</span>
+          <span class="fv2">14-digit GTIN or any barcode</span>
+        </div>
+        <div class="frow2">
+          <span class="fk2" style="color:#7c3aed">Saved?</span>
+          <span class="fv2">Persists in browser (localStorage)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── GITHUB DB TAB ── -->
+  <div class="tab" id="tab-cloud">
+    <div class="impwrap">
+
+      <div class="slbl" style="margin-bottom:14px">🐙 GitHub Database</div>
+
+      <!-- Repo config card -->
+      <div class="fbox" id="gh-setup-box">
+        <div class="ftitle">🔗 CONNECT YOUR GITHUB REPO</div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:12px">
+          Point to your <strong>products.json</strong> on GitHub.<br>
+          All users reading this repo share the same product names.
+        </div>
+
+        <div style="font-size:11px;color:var(--text3);font-weight:600;margin-bottom:4px;letter-spacing:.5px">GITHUB USERNAME</div>
+        <input class="ci" id="gh-owner" placeholder="e.g. your-username" style="width:100%;margin-bottom:10px;font-size:14px" oninput="saveGhConfig()"/>
+
+        <div style="font-size:11px;color:var(--text3);font-weight:600;margin-bottom:4px;letter-spacing:.5px">REPOSITORY NAME</div>
+        <input class="ci" id="gh-repo" placeholder="e.g. inventory-db" style="width:100%;margin-bottom:10px;font-size:14px" oninput="saveGhConfig()"/>
+
+        <div style="font-size:11px;color:var(--text3);font-weight:600;margin-bottom:4px;letter-spacing:.5px">FILE PATH IN REPO</div>
+        <input class="ci" id="gh-path" placeholder="products.json" value="products.json" style="width:100%;margin-bottom:10px;font-size:14px" oninput="saveGhConfig()"/>
+
+        <div style="font-size:11px;color:var(--text3);font-weight:600;margin-bottom:4px;letter-spacing:.5px">
+          PERSONAL ACCESS TOKEN
+          <span style="color:#94a3b8;font-weight:400"> (needed to add new GTINs)</span>
+        </div>
+        <input class="ci" id="gh-token" type="password" placeholder="ghp_xxxxxxxxxxxx" style="width:100%;margin-bottom:10px;font-size:14px" oninput="saveGhConfig()"/>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:12px;line-height:1.6">
+          Token stored locally only. Create at: GitHub → Settings → Developer Settings → Personal Access Tokens → Fine-grained → Contents: Read &amp; Write
+        </div>
+
+        <button class="bblue" style="width:100%;border-radius:10px;padding:12px;font-size:14px" onclick="testGhConnection()">
+          🔌 Test &amp; Sync
+        </button>
+        <div id="gh-status" style="margin-top:10px;font-size:13px;text-align:center;font-weight:600"></div>
+      </div>
+
+      <!-- Loaded stats -->
+      <div id="gh-stats-box" style="display:none;background:#f0fdf4;border:2px solid #bbf7d0;border-radius:14px;padding:16px;margin-top:14px">
+        <div style="color:#16a34a;font-size:13px;font-weight:700;margin-bottom:6px;letter-spacing:.5px">✓ GITHUB DB CONNECTED</div>
+        <div id="gh-stats-txt" style="font-size:14px;color:#14532d;font-weight:600;margin-bottom:4px"></div>
+        <div id="gh-stats-sub" style="font-size:12px;color:var(--text3);margin-bottom:10px"></div>
+        <button style="width:100%;background:var(--blue-bg);border:2px solid var(--blue-border);border-radius:10px;color:var(--blue);padding:10px;cursor:pointer;font-size:13px;font-weight:600" onclick="syncGithubDb(false)">
+          🔄 Sync Now
+        </button>
+      </div>
+
+      <!-- How-to -->
+      <div class="fbox" style="margin-top:14px">
+        <div class="ftitle">📋 HOW IT WORKS</div>
+        <div class="frow2"><span class="fk2" style="color:#16a34a">Read</span><span class="fv2">Fetches products.json from your public GitHub repo (no token needed)</span></div>
+        <div class="frow2"><span class="fk2" style="color:#2563eb">Write</span><span class="fv2">Adds new GTIN+name via GitHub API (token required)</span></div>
+        <div class="frow2"><span class="fk2" style="color:#7c3aed">Match</span><span class="fv2">Found name searched in your Excel to show full product details</span></div>
+        <div class="frow2"><span class="fk2" style="color:#d97706">Shared</span><span class="fv2">All users of same repo benefit from new entries</span></div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- NAV -->
+<nav id="nav">
+  <button class="nb active" id="nb-scan" onclick="showTab('scan')">
+    <span class="nbi">📷</span><span class="nbl">Scanner</span>
+  </button>
+  <button class="nb" id="nb-inventory" onclick="showTab('inventory')">
+    <span class="nbi">📋</span><span class="nbl">Inventory</span>
+  </button>
+  <button class="nb" id="nb-import" onclick="showTab('import')">
+    <span class="nbi">📊</span><span class="nbl">Import</span>
+  </button>
+  <button class="nb" id="nb-cloud" onclick="showTab('cloud')">
+    <span class="nbi">🐙</span><span class="nbl">GitHub DB</span>
+  </button>
+</nav>
+
+<!-- DELETE MODAL -->
+<div class="mbg" id="mdel" onclick="closeMDel()">
+  <div class="mbox" onclick="event.stopPropagation()">
+    <div style="font-size:44px;margin-bottom:14px">⚠️</div>
+    <div id="mdt" style="color:var(--red);font-weight:700;font-size:17px;margin-bottom:8px"></div>
+    <div id="mdm" style="color:var(--text2);font-size:14px;margin-bottom:22px;line-height:1.6"></div>
+    <div style="display:flex;gap:10px">
+      <button class="bcancel" onclick="closeMDel()">Cancel</button>
+      <button class="bdel2" id="bcd">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- PRODUCT DETAIL MODAL -->
+<div class="mbg bot" id="mprod" onclick="closeMProd()">
+  <div class="msheet" onclick="event.stopPropagation()">
+    <div class="mhdr">
+      <span style="color:var(--text);font-weight:700;font-size:16px">Product Details</span>
+      <button class="xb" onclick="closeMProd()">✕</button>
+    </div>
+    <div class="mbody" id="mpf"></div>
+    <div class="mfoot">
+      <button class="blook" id="bml">🔍 Lookup</button>
+      <button class="bdel3" id="bmd">🗑 Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Photo Processing Overlay -->
+<div id="photo-processing">
+  <div class="proc-spinner"></div>
+  <div style="color:#fff;font-size:16px;font-weight:600">Scanning image…</div>
+  <div id="proc-step" style="color:rgba(255,255,255,.5);font-size:13px">Analysing barcode</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────
+var inventory=[], headers=[], delTarget=null, selCode=null;
+var camStream=null, scanning=false, rafId=null;
+var cameras=[], camIdx=0;
+var lastCode='', lastCodeTime=0;
+var bdet=null;
+var acSelected=-1;
+var zbarBusy=false; // prevent overlapping async ZBar calls
+
+// ── INIT ──────────────────────────────────────────────
+window.addEventListener('load',function(){
+  // BarcodeDetector — Chrome Android native (includes DataMatrix)
+  if('BarcodeDetector' in window){
+    window.BarcodeDetector.getSupportedFormats().then(function(sup){
+      var want=['qr_code','code_128','code_39','code_93','ean_13','ean_8',
+                'upc_a','upc_e','itf','pdf417','data_matrix','aztec','codabar'];
+      var fmts=want.filter(function(f){return sup.indexOf(f)>-1;});
+      try{bdet=new BarcodeDetector({formats:fmts.length?fmts:sup});}
+      catch(e){try{bdet=new BarcodeDetector();}catch(e2){}}
+    }).catch(function(){try{bdet=new BarcodeDetector();}catch(e){}});
+  }
+
+  // Autocomplete close on outside click
+  document.addEventListener('click',function(e){
+    if(!e.target.closest('.ac-wrap')) hideAC();
+  });
+});
+
+// ── AUDIO ─────────────────────────────────────────────
+function beep(f,d){
+  try{
+    var ac=new(window.AudioContext||window.webkitAudioContext)();
+    var o=ac.createOscillator(),g=ac.createGain();
+    o.connect(g);g.connect(ac.destination);
+    o.frequency.value=f;
+    g.gain.setValueAtTime(.3,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+d);
+    o.start();o.stop(ac.currentTime+d);
+  }catch(e){}
+}
+
+// ── TABS ─────────────────────────────────────────────
+function showTab(n){
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.nb').forEach(function(b){b.classList.remove('active');});
+  document.getElementById('tab-'+n).classList.add('active');
+  document.getElementById('nb-'+n).classList.add('active');
+  if(n!=='scan') stopCam();
+}
+
+// ── TOAST ────────────────────────────────────────────
+function toast(msg,type){
+  type=type||'ok';
+  var t=document.getElementById('toast');
+  var c={
+    ok :['#f0fdf4','#16a34a','#166534'],
+    err:['#fef2f2','#dc2626','#991b1b'],
+    warn:['#fffbeb','#d97706','#92400e']
+  }[type]||['#f0fdf4','#16a34a','#166534'];
+  t.style.cssText='display:block;background:'+c[0]+';border:2px solid '+c[1]+';color:'+c[2]+';';
+  t.textContent=msg;
+  clearTimeout(t._t);
+  t._t=setTimeout(function(){t.style.display='none';},2800);
+}
+
+// ── CAMERA ───────────────────────────────────────────
+function startCam(){
+  document.getElementById('cam-ph').style.display='none';
+  document.getElementById('cam-err').style.display='none';
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    showErr('Camera not available on this connection.\nUse http://localhost or https://');
+    return;
+  }
+  navigator.mediaDevices.enumerateDevices().then(function(devs){
+    cameras=devs.filter(function(d){return d.kind==='videoinput';});
+    openCam();
+  }).catch(function(){cameras=[];openCam();});
+}
+
+function openCam(){
+  if(camStream) camStream.getTracks().forEach(function(t){t.stop();});
+  var con;
+  if(cameras.length>1&&camIdx>0&&cameras[camIdx]){
+    con={video:{deviceId:{exact:cameras[camIdx].id},width:{ideal:1920},height:{ideal:1080}}};
+  }else{
+    con={video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}};
+  }
+  navigator.mediaDevices.getUserMedia(con)
+    .catch(function(){return navigator.mediaDevices.getUserMedia({video:true});})
+    .then(function(stream){
+      camStream=stream;
+      var v=document.getElementById('video');
+      v.srcObject=stream;v.style.display='block';
+      v.play().then(function(){
+        var c=document.getElementById('canvas');
+        c.width=v.videoWidth||640;c.height=v.videoHeight||480;
+        document.getElementById('overlay').style.display='block';
+        document.getElementById('sbar').style.display='flex';
+        var ctrl=document.getElementById('cctrl');
+        ctrl.style.display='flex';
+        document.getElementById('bstop').style.display='inline-block';
+        if(cameras.length>1) document.getElementById('bflip').style.display='inline-block';
+        scanning=true;
+        document.getElementById('stxt').textContent='Scanning…';
+        // Show which engines are active
+        setTimeout(function(){
+          var zs=document.getElementById('zbar-status');
+          if(zs) zs.textContent=window._zbarReady?'[ZBar+Native]':'[Native]';
+        },800);
+        loop();
+      }).catch(function(e){showErr('Video error: '+e.message);});
+    })
+    .catch(function(e){
+      var msg='Camera permission denied.';
+      if(e.name==='NotAllowedError') msg='Permission denied.\nAllow camera in your browser settings.';
+      else if(e.name==='NotFoundError') msg='No camera found on this device.';
+      else msg='Camera error: '+e.message;
+      showErr(msg);
+    });
+}
+
+function showErr(msg){
+  document.getElementById('cam-ph').style.display='none';
+  document.getElementById('cem').textContent=msg;
+  document.getElementById('cam-err').style.display='flex';
+}
+function retryCam(){
+  document.getElementById('cam-err').style.display='none';
+  document.getElementById('cam-ph').style.display='flex';
+}
+function stopCam(){
+  scanning=false;
+  zbarBusy=false;
+  if(rafId){cancelAnimationFrame(rafId);rafId=null;}
+  if(camStream){camStream.getTracks().forEach(function(t){t.stop();});camStream=null;}
+  var v=document.getElementById('video');
+  v.style.display='none';v.srcObject=null;
+  document.getElementById('overlay').style.display='none';
+  document.getElementById('sbar').style.display='none';
+  document.getElementById('cctrl').style.display='none';
+  document.getElementById('cam-ph').style.display='flex';
+}
+function flipCam(){camIdx=(camIdx+1)%cameras.length;openCam();}
+
+// ── SCAN ENGINES ──────────────────────────────────────
+
+// Offscreen canvases for image processing
+var oc1=null, oc2=null;
+function getCanvas(id,w,h){
+  if(id===1){if(!oc1)oc1=document.createElement('canvas'); oc1.width=w;oc1.height=h;return oc1;}
+  if(!oc2)oc2=document.createElement('canvas'); oc2.width=w;oc2.height=h;return oc2;
+}
+
+// Greyscale + contrast boost (helps with faded / small DataMatrix)
+function contrastCanvas(src,w,h){
+  var c2=getCanvas(2,w,h);
+  var ctx=c2.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(src,0,0);
+  var id=ctx.getImageData(0,0,w,h), d=id.data;
+  for(var i=0;i<d.length;i+=4){
+    var g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+    g=Math.max(0,Math.min(255,(g-100)*2.5+100));
+    d[i]=d[i+1]=d[i+2]=g;
+  }
+  ctx.putImageData(id,0,0);
+  return c2;
+}
+
+// ZBar WASM scan — returns first decoded string or null
+async function zbarScan(canvasEl){
+  if(!window._zbarReady||!window._zbarScan) return null;
+  try{
+    var ctx=canvasEl.getContext('2d',{willReadFrequently:true});
+    var id=ctx.getImageData(0,0,canvasEl.width,canvasEl.height);
+    var syms=await window._zbarScan(id);
+    if(syms&&syms.length>0) return syms[0].decode();
+  }catch(e){}
+  return null;
+}
+
+// ── MAIN SCAN LOOP ────────────────────────────────────
+// Two parallel loops:
+//   1. rAF loop  → BarcodeDetector + jsQR (fast, every frame)
+//   2. async loop → ZBar WASM (slower but reads DataMatrix reliably)
+
+function startRafLoop(){
+  var v=document.getElementById('video');
+  var c=document.getElementById('canvas');
+
+  function tick(){
+    if(!scanning) return;
+    if(v.readyState===v.HAVE_ENOUGH_DATA&&v.videoWidth>0){
+      c.width=v.videoWidth; c.height=v.videoHeight;
+      var ctx=c.getContext('2d',{willReadFrequently:true});
+      ctx.drawImage(v,0,0,c.width,c.height);
+
+      // Engine 1: BarcodeDetector (native Chrome DataMatrix support)
+      if(bdet){
+        bdet.detect(v).then(function(codes){
+          if(codes&&codes.length>0) onCode(codes[0].rawValue,'Native');
+        }).catch(function(){});
+      }
+
+      // Engine 2: jsQR (QR codes)
+      if(typeof jsQR==='function'){
+        try{
+          var id=ctx.getImageData(0,0,c.width,c.height);
+          var qr=jsQR(id.data,id.width,id.height,{inversionAttempts:'attemptBoth'});
+          if(qr&&qr.data) onCode(qr.data,'jsQR');
+        }catch(e){}
+      }
+    }
+    rafId=requestAnimationFrame(tick);
+  }
+  rafId=requestAnimationFrame(tick);
+}
+
+async function startZBarLoop(){
+  var v=document.getElementById('video');
+  while(scanning){
+    if(!zbarBusy && v.readyState===v.HAVE_ENOUGH_DATA && v.videoWidth>0){
+      zbarBusy=true;
+      var w=v.videoWidth, h=v.videoHeight;
+
+      // Pass A: full frame
+      var c1=getCanvas(1,w,h);
+      c1.getContext('2d',{willReadFrequently:true}).drawImage(v,0,0,w,h);
+      var r1=await zbarScan(c1);
+      if(r1){onCode(r1,'ZBar'); zbarBusy=false; await sleep(80); continue;}
+
+      // Pass B: contrast-boosted (good for faded/small DataMatrix)
+      var c1b=contrastCanvas(c1,w,h);
+      var r2=await zbarScan(c1b);
+      if(r2){onCode(r2,'ZBar+Contrast'); zbarBusy=false; await sleep(80); continue;}
+
+      // Pass C: 2× centre crop (small codes on large frame)
+      var cw=Math.floor(w/2), ch=Math.floor(h/2);
+      var cx=Math.floor(w/4), cy=Math.floor(h/4);
+      var c2=getCanvas(2,w,h);
+      c2.getContext('2d',{willReadFrequently:true}).drawImage(c1,cx,cy,cw,ch,0,0,w,h);
+      var r3=await zbarScan(c2);
+      if(r3){onCode(r3,'ZBar+Zoom'); zbarBusy=false; await sleep(80); continue;}
+
+      // Pass D: contrast on crop
+      var c2b=contrastCanvas(c2,w,h);
+      var r4=await zbarScan(c2b);
+      if(r4){onCode(r4,'ZBar+Zoom+Contrast');}
+
+      zbarBusy=false;
+    }
+    await sleep(120); // ~8fps for ZBar (saves battery, still very responsive)
+  }
+}
+
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+
+// ── PHOTO CAPTURE & SCAN ──────────────────────────────
+// Opens native camera → captures full-res photo → multi-engine decode
+// This is far more reliable for DataMatrix than live video stream
+
+function setProc(step){
+  var el=document.getElementById('proc-step');
+  if(el) el.textContent=step;
+}
+
+async function handlePhoto(e){
+  var file=e.target.files[0];
+  e.target.value='';
+  if(!file) return;
+  document.getElementById('photo-processing').style.display='flex';
+  try{
+    setProc('Loading image…');
+    var img=await loadImg(file);
+    document.getElementById('photo-img').src=img.src;
+    document.getElementById('photo-preview').style.display='block';
+    document.getElementById('photo-result-msg').textContent='';
+
+    var c=document.createElement('canvas');
+    c.width=img.naturalWidth; c.height=img.naturalHeight;
+    var ctx=c.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(img,0,0);
+    var found=null;
+
+    // Engine 1: BarcodeDetector native
+    if(!found&&bdet){
+      setProc('Engine 1: Native scanner…');
+      try{var codes=await bdet.detect(c);if(codes&&codes.length>0)found={val:codes[0].rawValue,eng:'Native'};}catch(er){}
+    }
+    // Engine 2: ZBar full res
+    if(!found){setProc('Engine 2: ZBar full resolution…');var r=await zbarScan(c);if(r)found={val:r,eng:'ZBar'};}
+    // Engine 3: ZBar + contrast
+    if(!found){setProc('Engine 3: ZBar + contrast boost…');var cc=contrastCanvas(c,c.width,c.height);var r2=await zbarScan(cc);if(r2)found={val:r2,eng:'ZBar+Contrast'};}
+    // Engine 4: ZBar 2× crop
+    if(!found){setProc('Engine 4: ZBar 2× centre zoom…');var cr=cropCentre(c,2);var r3=await zbarScan(cr);if(r3)found={val:r3,eng:'ZBar+Zoom2x'};}
+    // Engine 5: ZBar 2× crop + contrast
+    if(!found){setProc('Engine 5: ZBar 2× zoom + contrast…');var cr2=cropCentre(c,2);var cc2=contrastCanvas(cr2,cr2.width,cr2.height);var r4=await zbarScan(cc2);if(r4)found={val:r4,eng:'ZBar+Zoom2x+C'};}
+    // Engine 6–9: multiple zoom levels
+    for(var z=1.5;z<=5&&!found;z+=0.5){
+      setProc('Engine: ZBar ×'+z.toFixed(1)+' zoom…');
+      var crz=cropCentre(c,z);
+      var rz=await zbarScan(crz); if(rz){found={val:rz,eng:'ZBar×'+z.toFixed(1)};break;}
+      var crzc=contrastCanvas(crz,crz.width,crz.height);
+      var rzc=await zbarScan(crzc); if(rzc){found={val:rzc,eng:'ZBar×'+z.toFixed(1)+'+C'};break;}
+      await sleep(5);
+    }
+    // Engine 10: jsQR
+    if(!found&&typeof jsQR==='function'){
+      setProc('Engine: jsQR…');
+      try{var id2=ctx.getImageData(0,0,c.width,c.height);var qr=jsQR(id2.data,id2.width,id2.height,{inversionAttempts:'attemptBoth'});if(qr&&qr.data)found={val:qr.data,eng:'jsQR'};}catch(er){}
+    }
+    document.getElementById('photo-processing').style.display='none';
+    if(found){
+      document.getElementById('photo-result-msg').innerHTML='<span style="color:#16a34a;font-size:14px">✅ Found via '+found.eng+'</span>';
+      onCode(found.val,found.eng+' (Photo)');
+    }else{
+      document.getElementById('photo-result-msg').innerHTML='<span style="color:#dc2626;font-size:13px">❌ No barcode detected. Try better lighting or closer.</span>';
+      toast('No barcode found.\nTry holding phone closer & ensure good lighting.','warn');
+    }
+  }catch(ex){
+    document.getElementById('photo-processing').style.display='none';
+    toast('Photo error: '+ex.message,'err');
+  }
+}
+
+function loadImg(file){
+  return new Promise(function(res,rej){
+    var url=URL.createObjectURL(file);
+    var img=new Image();
+    img.onload=function(){res(img);};
+    img.onerror=rej;
+    img.src=url;
+  });
+}
+
+function cropCentre(canvas,zoom){
+  var w=canvas.width,h=canvas.height;
+  var cw=Math.floor(w/zoom),ch=Math.floor(h/zoom);
+  var cx=Math.floor((w-cw)/2),cy=Math.floor((h-ch)/2);
+  var out=document.createElement('canvas');
+  out.width=w;out.height=h;
+  out.getContext('2d',{willReadFrequently:true}).drawImage(canvas,cx,cy,cw,ch,0,0,w,h);
+  return out;
+}
+
+function closePhotoPreview(){
+  document.getElementById('photo-preview').style.display='none';
+}
+
+// Start both loops when camera is ready
+function loop(){
+  startRafLoop();
+  startZBarLoop();
+}
+
+// ── GS1 PARSER ────────────────────────────────────────
+var GS1_AI_LABELS={
+  '00':'SSCC','01':'GTIN','02':'GTIN of Contents',
+  '10':'Batch / Lot','11':'Prod Date','12':'Due Date',
+  '13':'Pack Date','15':'Best Before','17':'Expiry Date',
+  '20':'Variant','21':'Serial No.','22':'Secondary Data',
+  '30':'Variable Count','37':'Units Contained',
+  '240':'Additional ID','241':'Customer Part No.',
+  '250':'Secondary Serial','251':'Ref. to Source',
+  '253':'GDTI','254':'Extension',
+  '310':'Net Weight kg','311':'Length m','312':'Width m',
+  '313':'Depth m','314':'Area m²','315':'Volume L',
+  '316':'Volume m³',
+  '400':'PO Number','401':'Consignment','402':'Shipment ID',
+  '403':'Route','410':'Ship-to','411':'Bill-to',
+  '412':'Purchase From','413':'Ship-for','414':'Location',
+  '420':'Ship-to ZIP','421':'Ship-to ZIP+Ctry',
+  '422':'Country of Origin','423':'Country Proc.',
+  '710':'NHRN - National','711':'NHRN - Pharma'
+};
+
+function parseGS1(raw){
+  var result={ais:{},raw:raw,isGS1:false,gtin:null};
+  if(!raw) return result;
+
+  // Detect GS1 format with parentheses: (01)xxxxxx(17)xxxxxx
+  var reParens=/\((\d{2,4})\)([^(]+)/g;
+  var m, found=false;
+  while((m=reParens.exec(raw))!==null){
+    result.ais[m[1]]=m[2].trim();
+    found=true;
+  }
+
+  if(found){
+    result.isGS1=true;
+    result.gtin=result.ais['01']||null;
+    return result;
+  }
+
+  // Detect GS1 without parentheses (FNC1 delimited)
+  // Common fixed-length AIs: 01=14, 17=6, 10=variable(up to 20), 21=variable
+  // Try to extract using known AI lengths
+  var s=raw;
+  // Remove leading FNC1 if present
+  s=s.replace(/^\]d2|^\]C1|^\x1d/,'');
+
+  // Fixed length AIs map: AI -> fixed length of value (0=variable)
+  var fixedLen={'00':18,'01':14,'02':14,'11':6,'12':6,'13':6,'15':6,'17':6,'20':2};
+  var i=0;
+  var attempts=0;
+  while(i<s.length&&attempts<20){
+    attempts++;
+    var matched=false;
+    // Try AI lengths 2,3,4
+    for(var al=4;al>=2;al--){
+      var ai=s.substr(i,al);
+      if(!/^\d+$/.test(ai)) continue;
+      var fl=fixedLen[ai];
+      if(fl!==undefined){
+        var val=s.substr(i+al,fl);
+        result.ais[ai]=val;
+        result.isGS1=true;
+        i+=al+fl;
+        matched=true;
+        break;
+      }
+    }
+    if(!matched){
+      // Variable-length AI terminated by FNC1 (\x1d) or end
+      var ai2=s.substr(i,2);
+      if(/^\d{2}$/.test(ai2)){
+        var end=s.indexOf('\x1d',i+2);
+        var val2=(end===-1)?s.substr(i+2):s.substr(i+2,end-(i+2));
+        result.ais[ai2]=val2;
+        result.isGS1=true;
+        i+=(end===-1?s.length:end+1);
+      } else {
+        break;
+      }
+    }
+  }
+
+  if(result.isGS1) result.gtin=result.ais['01']||null;
+  return result;
+}
+
+// Format YYMMDD expiry date nicely
+function fmtExpiry(yymmdd){
+  if(!yymmdd||yymmdd.length<6) return yymmdd;
+  var yy=yymmdd.substr(0,2), mm=yymmdd.substr(2,2), dd=yymmdd.substr(4,2);
+  var yr=parseInt(yy,10)<50?'20'+yy:'19'+yy;
+  var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var mIdx=parseInt(mm,10)-1;
+  var mName=(mIdx>=0&&mIdx<12)?months[mIdx]:mm;
+  var day=dd==='00'?'':dd+' ';
+  // Check if expired
+  var exp=new Date(parseInt(yr),parseInt(mm,10)-1,dd==='00'?28:parseInt(dd,10));
+  var isExp=exp<new Date();
+  return {text:day+mName+' '+yr, expired:isExp};
+}
+
+// Render GS1 panel
+function renderGS1Panel(gs1){
+  var panel=document.getElementById('gs1-panel');
+  var fields=document.getElementById('gs1-fields');
+  if(!gs1||!gs1.isGS1){panel.style.display='none';return;}
+
+  var ais=gs1.ais;
+  var aiKeys=Object.keys(ais);
+  document.getElementById('gs1-ai-count').textContent=aiKeys.length+' fields';
+
+  // Priority order for display
+  var order=['01','17','10','21'];
+  var displayed={};
+  var html='';
+
+  // Show raw scan string
+  html+='<div class="raw-pill" style="margin-top:10px"><span style="color:#94a3b8;font-weight:600">RAW:</span> '+esc(gs1.raw)+'</div>';
+
+  // Show ordered fields first
+  order.forEach(function(ai){
+    if(!ais[ai]) return;
+    displayed[ai]=true;
+    html+=renderAIRow(ai,ais[ai]);
+  });
+  // Show remaining fields
+  aiKeys.forEach(function(ai){
+    if(displayed[ai]) return;
+    html+=renderAIRow(ai,ais[ai]);
+  });
+
+  fields.innerHTML=html;
+  panel.style.display='block';
+}
+
+function renderAIRow(ai,val){
+  var label=GS1_AI_LABELS[ai]||('AI '+ai);
+  var valHtml='';
+  var valClass='gs1-val';
+
+  if(ai==='01'){
+    valClass+=' gtin';
+    valHtml='<span class="'+valClass+'">'+esc(val)+'</span>';
+  } else if(ai==='17'){
+    var exp=fmtExpiry(val);
+    var expClass=valClass+' expiry'+(exp.expired?'':' ok');
+    var expIcon=exp.expired?' ⚠️':'';
+    valHtml='<span class="'+expClass+'">'+esc(exp.text)+expIcon+'</span>';
+  } else if(ai==='10'){
+    valClass+=' batch';
+    valHtml='<span class="'+valClass+'">'+esc(val)+'</span>';
+  } else if(ai==='21'){
+    valClass+=' serial';
+    valHtml='<span class="'+valClass+'">'+esc(val)+'</span>';
+  } else {
+    valHtml='<span class="'+valClass+'">'+esc(val)+'</span>';
+  }
+
+  return '<div class="gs1-row">'
+    +'<span class="gs1-ai"><span class="gs1-ai-badge">'+esc(ai)+'</span>'
+    +'<span class="gs1-ai-label">'+esc(label)+'</span></span>'
+    +valHtml
+    +'</div>';
+}
+
+function onCode(code,engine){
+  if(!code||!code.trim()) return;
+  var now=Date.now();
+  if(code===lastCode&&now-lastCodeTime<3000) return;
+  lastCode=code; lastCodeTime=now;
+  var fl=document.getElementById('flash');
+  fl.style.opacity='1';
+  setTimeout(function(){fl.style.opacity='0';},200);
+  if(engine) document.getElementById('stxt').textContent='Decoded via '+engine+'…';
+  // Parse GS1 — extract GTIN (01) if present, otherwise use raw code
+  var gs1=parseGS1(code);
+  window._lastGS1=gs1;
+  var lookupCode=gs1.gtin||code;
+  lookup(lookupCode,'camera');
+}
+
+// ── LOOKUP ────────────────────────────────────────────
+function lookup(code,mode){
+  code=String(code).trim();
+  mode=mode||'manual';
+  var isCam=(mode==='camera');
+  var isName=(mode==='name');
+  var colLabel =isCam?'Barcode / GTIN':isName?'Item Name (Col 3)':'Item Code (Col 1)';
+  var badgeText=isCam?'📷 Camera':isName?'🔤 Name':'⌨️ Manual';
+  var badgeCol =isCam?'#d97706':isName?'#7c3aed':'#2563eb';
+  var badgeBg  =isCam?'#fffbeb':isName?'#f5f3ff':'#eff6ff';
+
+  document.getElementById('hint').style.display='none';
+  document.getElementById('res').style.display='block';
+  document.getElementById('lcode').textContent=code;
+  document.getElementById('res-mode-lbl').textContent=colLabel+':';
+  var badge=document.getElementById('res-mode-badge');
+  badge.textContent=badgeText;
+  badge.style.borderColor=badgeCol;
+  badge.style.color=badgeCol;
+  badge.style.background=badgeBg;
+  document.getElementById('nfc').style.display='none';
+  document.getElementById('fcard').style.display='none';
+  document.getElementById('cloud-found-card').style.display='none';
+  document.getElementById('cloud-save-form').style.display='none';
+  document.getElementById('json-found-card').style.display='none';
+  document.getElementById('nf-gs1').style.display='none';
+  document.getElementById('fuzzy-picker').style.display='none';
+
+  // Render GS1 panel whenever we have GS1 data (even if product not found)
+  var gs1=window._lastGS1||null;
+  if(isCam) renderGS1Panel(gs1);
+  else document.getElementById('gs1-panel').style.display='none';
+
+  if(!inventory.length){
+    toast('No inventory loaded.\nGo to Import tab first.','warn');
+    document.getElementById('nfc').style.display='block';
+    document.getElementById('nfm').textContent='Import inventory first.';
+    return;
+  }
+  var item=null;
+  for(var i=0;i<inventory.length;i++){
+    var fv=isCam?inventory[i].__barcode:inventory[i].__code;
+    if(String(fv).trim().toLowerCase()===code.toLowerCase()){item=inventory[i];break;}
+  }
+  if(item){
+    beep(1200,.15);
+    document.getElementById('stxt').textContent='✓ Found: '+code;
+    renderFound(item, gs1);
+  }else{
+    beep(300,.3);
+    document.getElementById('nfc').style.display='block';
+
+    // Show GS1 decoded fields
+    if(gs1&&gs1.isGS1){
+      var nfgs1=document.getElementById('nf-gs1');
+      nfgs1.style.display='block';
+      nfgs1.innerHTML='<div style="font-size:11px;color:#64748b;margin-bottom:6px;font-weight:600">GS1 DATA DECODED:</div>'
+        +(gs1.ais['01']?'<div style="font-size:13px;margin-bottom:4px">🏷 GTIN: <strong style="color:#1d4ed8">'+esc(gs1.ais['01'])+'</strong></div>':'')
+        +(gs1.ais['17']?'<div style="font-size:13px;margin-bottom:4px">📅 Expiry: <strong>'+esc(fmtExpiry(gs1.ais['17']).text)+'</strong></div>':'')
+        +(gs1.ais['10']?'<div style="font-size:13px;margin-bottom:4px">📦 Batch: <strong>'+esc(gs1.ais['10'])+'</strong></div>':'')
+        +(gs1.ais['21']?'<div style="font-size:13px">🔢 Serial: <strong>'+esc(gs1.ais['21'])+'</strong></div>':'');
+    }
+
+    // ── LOOKUP CHAIN ──────────────────────────────────
+    // Step 1 (already done): Excel exact barcode match — failed
+
+    // Step 2: Local JSON DB
+    var jsonProd=jsonLookup(code);
+    if(jsonProd&&jsonProd.name){
+      beep(900,.12);
+      document.getElementById('nfm').textContent='Not in Excel — found in JSON DB';
+      document.getElementById('stxt').textContent='🗃️ Found in JSON DB!';
+      showJsonFound(code,jsonProd);
+      return;
+    }
+
+    // Step 2b: Check fuzzy mapping cache (user previously confirmed a match)
+    var cachedItem=getFuzzyMappedItem(code);
+    if(cachedItem){
+      beep(1200,.15);
+      document.getElementById('nfm').textContent='Matched via saved mapping';
+      document.getElementById('stxt').textContent='📍 Remembered match!';
+      renderFound(cachedItem, gs1);
+      document.getElementById('nfc').style.display='none';
+      return;
+    }
+
+    // Step 3: GitHub DB → get name → fuzzy-search local Excel
+    document.getElementById('stxt').textContent='🐙 Checking GitHub DB…';
+    document.getElementById('nfm').textContent='Searching GitHub database…';
+
+    githubLookup(code).then(function(productName){
+      if(productName){
+        beep(900,.12);
+        // Run all 4 fuzzy layers against local Excel
+        var fuzzyResults=fuzzySearchExcel(productName);
+
+        if(fuzzyResults.exact){
+          // Layer 1 hit — perfect match
+          document.getElementById('nfm').textContent='GTIN found in GitHub → exact match in Excel';
+          document.getElementById('stxt').textContent='🐙+📊 GitHub + Excel match!';
+          showGithubFound(code, productName, fuzzyResults.exact);
+        } else if(fuzzyResults.candidates.length>0){
+          // Fuzzy matches found — show picker
+          document.getElementById('nfm').textContent='GTIN found in GitHub — select matching product:';
+          document.getElementById('stxt').textContent='🔍 Close matches found…';
+          showFuzzyPicker(code, productName, fuzzyResults.candidates, gs1);
+        } else {
+          // GitHub name found but no Excel match at all
+          document.getElementById('nfm').textContent='GitHub: "'+productName+'" — no match in your Excel';
+          document.getElementById('stxt').textContent='🐙 Found in GitHub (no Excel match)';
+          showGithubFound(code, productName, null);
+        }
+      } else {
+        // Not found anywhere — offer to add to GitHub
+        document.getElementById('nfm').textContent='"'+code+'" not found. Add it to GitHub DB?';
+        document.getElementById('stxt').textContent='✗ Not found anywhere';
+        showCloudSaveForm(code);
+      }
+    });
+  }
+}
+
+// ── 4-LAYER FUZZY MATCHING ENGINE ────────────────────
+// Called after GitHub returns a product name.
+// Searches local Excel with escalating tolerance.
+
+// Normalise: lowercase, strip punctuation/units/extra spaces
+function normalise(s){
+  return String(s||'')
+    .toLowerCase()
+    .replace(/\b(tab|tabs|tablet|tablets|cap|caps|capsule|capsules|inj|injection|syp|syrup|susp|suspension|sol|solution|crm|cream|oint|ointment|gel|drop|drops|sach|sachet|mg|mcg|ml|gm|grams?|kg|iu|%)\b/gi,'')
+    .replace(/[^a-z0-9]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+// Tokenise: split into meaningful words (len>=2, skip pure numbers <3 digits unless dosage)
+function tokenise(s){
+  return normalise(s).split(' ').filter(function(w){return w.length>=2;});
+}
+
+// Levenshtein distance
+function levenshtein(a,b){
+  var m=a.length,n=b.length;
+  if(!m) return n; if(!n) return m;
+  var dp=[];
+  for(var i=0;i<=m;i++){dp[i]=[i];}
+  for(var j=0;j<=n;j++){dp[0][j]=j;}
+  for(var i=1;i<=m;i++){
+    for(var j=1;j<=n;j++){
+      dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+    }
+  }
+  return dp[m][n];
+}
+
+// Similarity 0–100
+function similarity(a,b){
+  var na=normalise(a),nb=normalise(b);
+  if(!na&&!nb) return 100;
+  if(!na||!nb) return 0;
+  var maxLen=Math.max(na.length,nb.length);
+  return Math.round((1-levenshtein(na,nb)/maxLen)*100);
+}
+
+// Token overlap score 0–100
+function tokenScore(a,b){
+  var ta=tokenise(a), tb=tokenise(b);
+  if(!ta.length||!tb.length) return 0;
+  var matches=0;
+  ta.forEach(function(w){
+    if(tb.some(function(x){
+      return x===w || (w.length>=4&&(x.indexOf(w)>-1||w.indexOf(x)>-1));
+    })) matches++;
+  });
+  // score = matched / union
+  var union=ta.length+tb.length-matches;
+  return Math.round((matches/union)*100);
+}
+
+// Combined score (weighted)
+function combinedScore(ghName, excelName){
+  var s1=similarity(ghName,excelName);       // Levenshtein
+  var s2=tokenScore(ghName,excelName);       // token overlap
+  // normalised match bonus
+  var nn1=normalise(ghName), nn2=normalise(excelName);
+  var s3=(nn1===nn2)?100:similarity(nn1,nn2);
+  // weighted: token overlap most important for pharma names
+  return Math.round(s1*0.25 + s2*0.50 + s3*0.25);
+}
+
+// Main fuzzy search — returns {exact, candidates:[{item,score,layer}]}
+function fuzzySearchExcel(ghName){
+  var result={exact:null, candidates:[]};
+  if(!inventory.length||!ghName) return result;
+
+  var needle=String(ghName).trim();
+  var needleLow=needle.toLowerCase();
+  var needleNorm=normalise(needle);
+  var needleTokens=tokenise(needle);
+
+  for(var i=0;i<inventory.length;i++){
+    var item=inventory[i];
+    var raw=String(item.__name||
+      (headers[2]?item[headers[2]]:'') || '').trim();
+    if(!raw) continue;
+
+    var rawLow=raw.toLowerCase();
+    var rawNorm=normalise(raw);
+    var layer=0, score=0;
+
+    // Layer 1: Exact (case-insensitive)
+    if(rawLow===needleLow){
+      result.exact=item; return result; // perfect — stop immediately
+    }
+    // Layer 2: Normalised exact
+    else if(rawNorm===needleNorm && rawNorm.length>0){
+      layer=2; score=95;
+    }
+    // Layer 3: Token match (≥70% token overlap)
+    else {
+      var ts=tokenScore(needle,raw);
+      if(ts>=70){layer=3; score=ts;}
+      else {
+        // Layer 4: Levenshtein fuzzy ≥65%
+        var cs=combinedScore(needle,raw);
+        if(cs>=65){layer=4; score=cs;}
+      }
+    }
+
+    if(layer>0){
+      result.candidates.push({item:item, score:score, layer:layer, name:raw});
+    }
+  }
+
+  // Sort by score descending, keep top 6
+  result.candidates.sort(function(a,b){return b.score-a.score;});
+  result.candidates=result.candidates.slice(0,6);
+  return result;
+}
+
+// ── FUZZY PICKER UI ──────────────────────────────────
+function showFuzzyPicker(gtin, ghName, candidates, gs1){
+  var el=document.getElementById('fuzzy-picker');
+  var opts=document.getElementById('fuzzy-options');
+  var sub=document.getElementById('fuzzy-subtitle');
+
+  sub.textContent='GitHub name: "'+ghName+'" — '+candidates.length+' close match'+(candidates.length>1?'es':'');
+
+  var layerLabel=['','Exact','Normalised','Token match','Fuzzy score'];
+  var layerIcon =['','✅','🔤','🔗','🧪'];
+
+  opts.innerHTML=candidates.map(function(c,idx){
+    var scoreClass=c.score>=85?'score-high':c.score>=70?'score-med':'score-low';
+    var layerBadge=(layerIcon[c.layer]||'')+(layerLabel[c.layer]?(' '+layerLabel[c.layer]):'');
+    return '<div class="fuzzy-option" onclick="pickFuzzyMatch(\''+esc(gtin)+'\',\''+esc(ghName)+'\','+idx+')">'
+      +'<div style="flex:1;min-width:0">'
+        +'<div style="font-size:14px;font-weight:600;color:#1e293b;white-space:normal">'+esc(c.name)+'</div>'
+        +'<div style="font-size:11px;color:#94a3b8;margin-top:2px">'
+          +'Code: '+esc(c.item.__code||'—')
+          +(c.item.__barcode?' · BC: '+esc(c.item.__barcode):'')
+          +' · <span style="color:#d97706">'+layerBadge+'</span>'
+        +'</div>'
+      +'</div>'
+      +'<span class="fuzzy-score '+scoreClass+'">'+c.score+'%</span>'
+      +'</div>';
+  }).join('');
+
+  // Store candidates for use in pickFuzzyMatch
+  window._fuzzyCandidates=candidates;
+  window._fuzzyGhName=ghName;
+  window._fuzzyGs1=gs1;
+
+  el.style.display='block';
+}
+
+function pickFuzzyMatch(gtin, ghName, idx){
+  var candidates=window._fuzzyCandidates||[];
+  var gs1=window._fuzzyGs1||null;
+  var c=candidates[idx];
+  if(!c) return;
+
+  // Save mapping so next scan resolves instantly without picker
+  saveFuzzyMapping(gtin, c.item.__code);
+
+  document.getElementById('fuzzy-picker').style.display='none';
+  document.getElementById('nfc').style.display='none';
+  document.getElementById('stxt').textContent='🐙+📊 GitHub + Excel match! ('+c.score+'%)';
+  beep(1200,.15);
+  renderFound(c.item, gs1);
+}
+
+function pickNoneMatch(){
+  // User says none matched — offer to save the GitHub name to GitHub DB
+  var gtin=document.getElementById('lcode').textContent.trim();
+  var ghName=window._fuzzyGhName||'';
+  document.getElementById('fuzzy-picker').style.display='none';
+  document.getElementById('nfc').style.display='block';
+  document.getElementById('nfm').textContent='No match selected. Add correct name to GitHub DB:';
+  // Pre-fill the save form with the GitHub name as a suggestion
+  showCloudSaveForm(gtin);
+  var inp=document.getElementById('cs-name');
+  if(inp){ inp.value=ghName; csNameInput(ghName); }
+}
+
+// ── LOCAL FUZZY MAPPING CACHE ─────────────────────────
+// Remembers user-confirmed GTIN→ExcelCode mappings locally
+var FMAP_KEY='inv_fuzzy_map';
+var fuzzyMap={};
+(function(){
+  try{var s=localStorage.getItem(FMAP_KEY);if(s)fuzzyMap=JSON.parse(s);}catch(e){}
+})();
+
+function saveFuzzyMapping(gtin,excelCode){
+  fuzzyMap[String(gtin)]=String(excelCode);
+  try{localStorage.setItem(FMAP_KEY,JSON.stringify(fuzzyMap));}catch(e){}
+}
+
+// Check fuzzy mapping cache — returns excel item or null
+function getFuzzyMappedItem(gtin){
+  var code=fuzzyMap[String(gtin)];
+  if(!code) return null;
+  for(var i=0;i<inventory.length;i++){
+    if(inventory[i].__code===code) return inventory[i];
+  }
+  return null; // mapping exists but item not in current Excel
+}
+
+// ── RENDER FOUND ──────────────────────────────────────
+function renderFound(item, gs1){
+  if(!item) return;
+  var extraHtml='';
+  // If GS1 scanned — show expiry/batch/serial from the CODE (not from Excel)
+  // These come from the actual unit, not the static inventory data
+  if(gs1&&gs1.isGS1){
+    var exFields=[];
+    if(gs1.ais['17']){var ef=fmtExpiry(gs1.ais['17']);exFields.push({k:'Expiry Date',v:ef.text+(ef.expired?' ⚠️ EXPIRED':''),c:ef.expired?'#dc2626':'#16a34a'});}
+    if(gs1.ais['10']){exFields.push({k:'Batch / Lot',v:gs1.ais['10'],c:'#d97706'});}
+    if(gs1.ais['21']){exFields.push({k:'Serial No.',v:gs1.ais['21'],c:'#7c3aed'});}
+    if(exFields.length){
+      extraHtml='<div style="background:#f0fdf4;border-radius:8px;padding:8px 14px;margin-bottom:2px;">'
+        +'<div style="font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;margin-bottom:6px">FROM GS1 CODE</div>'
+        +exFields.map(function(f){
+          return '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(34,197,94,.1)">'
+            +'<span style="color:#64748b;font-size:11px;text-transform:uppercase;font-weight:600">'+esc(f.k)+'</span>'
+            +'<span style="font-weight:700;font-size:13px;color:'+f.c+'">'+esc(f.v)+'</span>'
+            +'</div>';
+        }).join('')+'</div>';
+    }
+  }
+  document.getElementById('ffields').innerHTML=
+    extraHtml
+    + headers.map(function(h,i){
+      return '<div class="frow" style="'+(i===headers.length-1?'border-bottom:none':'')+'">'
+        +'<span class="fk">'+esc(h)+'</span>'
+        +'<span class="fv" style="color:'+fc(h)+'">'+esc(item[h]||'—')+'</span>'
+        +'</div>';
+    }).join('');
+  document.getElementById('fcard').style.display='block';
+}
+
+function fc(k){
+  k=k.toLowerCase();
+  if(/qty|quantity|stock/.test(k)) return '#16a34a';
+  if(/price|cost|rate|amount/.test(k)) return '#d97706';
+  if(/code|id|sku|barcode/.test(k)) return '#2563eb';
+  return '#1e293b';
+}
+function esc(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function clearRes(){
+  document.getElementById('res').style.display='none';
+  document.getElementById('hint').style.display='block';
+  document.getElementById('gs1-panel').style.display='none';
+  document.getElementById('nf-gs1').style.display='none';
+  document.getElementById('json-found-card').style.display='none';
+  document.getElementById('cloud-found-card').style.display='none';
+  document.getElementById('cloud-save-form').style.display='none';
+  document.getElementById('fuzzy-picker').style.display='none';
+  lastCode='';
+  window._lastGS1=null;
+}
+function doManual(){
+  var v=document.getElementById('min').value.trim();
+  if(!v) return;
+  lookup(v,'manual');
+  document.getElementById('min').value='';
+}
+
+// ── NAME SEARCH + AUTOCOMPLETE ────────────────────────
+function onNameInput(){
+  var q=document.getElementById('nin').value.trim().toLowerCase();
+  acSelected=-1;
+  if(!q||q.length<1){hideAC();return;}
+  if(!inventory.length){hideAC();return;}
+
+  // Match against __name (col 3) — show top 8 results
+  var matches=[];
+  for(var i=0;i<inventory.length&&matches.length<8;i++){
+    var name=String(inventory[i].__name||'').toLowerCase();
+    if(name.indexOf(q)>-1) matches.push(inventory[i]);
+  }
+  if(!matches.length){hideAC();return;}
+
+  var list=document.getElementById('ac-list');
+  list.innerHTML=matches.map(function(item){
+    var rawName=item.__name||'';
+    var lo=rawName.toLowerCase().indexOf(q);
+    var highlighted= lo>-1
+      ? esc(rawName.slice(0,lo))
+        +'<span class="ac-match">'+esc(rawName.slice(lo,lo+q.length))+'</span>'
+        +esc(rawName.slice(lo+q.length))
+      : esc(rawName);
+    return '<div class="ac-item" onclick="selectAC(\''+esc(item.__code)+'\')">'
+      +'<span class="ac-name">'+highlighted+'</span>'
+      +'<span class="ac-sub">Code: '+esc(item.__code)+(item.__barcode?' · Barcode: '+esc(item.__barcode):'')+'</span>'
+      +'</div>';
+  }).join('');
+  list.style.display='block';
+}
+
+function onNameKey(e){
+  var list=document.getElementById('ac-list');
+  var items=list.querySelectorAll('.ac-item');
+  if(!items.length) return;
+  if(e.key==='ArrowDown'){
+    e.preventDefault();
+    acSelected=Math.min(acSelected+1,items.length-1);
+    highlightAC(items);
+  }else if(e.key==='ArrowUp'){
+    e.preventDefault();
+    acSelected=Math.max(acSelected-1,0);
+    highlightAC(items);
+  }else if(e.key==='Enter'){
+    e.preventDefault();
+    if(acSelected>=0&&items[acSelected]){
+      items[acSelected].click();
+    }else{
+      doNameSearch();
+    }
+  }else if(e.key==='Escape'){
+    hideAC();
+  }
+}
+
+function highlightAC(items){
+  items.forEach(function(el,i){
+    el.style.background=i===acSelected?'var(--blue-bg)':'';
+  });
+  if(items[acSelected]) items[acSelected].scrollIntoView({block:'nearest'});
+}
+
+function selectAC(code){
+  hideAC();
+  document.getElementById('nin').value='';
+  lookup(code,'manual');
+}
+
+function doNameSearch(){
+  var q=document.getElementById('nin').value.trim().toLowerCase();
+  hideAC();
+  if(!q){return;}
+  if(!inventory.length){toast('No inventory loaded.','warn');return;}
+  // Find first exact or partial name match
+  var item=null;
+  for(var i=0;i<inventory.length;i++){
+    if(String(inventory[i].__name||'').toLowerCase()===q){item=inventory[i];break;}
+  }
+  if(!item){
+    for(var i=0;i<inventory.length;i++){
+      if(String(inventory[i].__name||'').toLowerCase().indexOf(q)>-1){item=inventory[i];break;}
+    }
+  }
+  document.getElementById('nin').value='';
+  if(item){
+    lookup(item.__code,'name');
+  }else{
+    document.getElementById('hint').style.display='none';
+    document.getElementById('res').style.display='block';
+    document.getElementById('lcode').textContent=q;
+    document.getElementById('res-mode-lbl').textContent='Item Name:';
+    var badge=document.getElementById('res-mode-badge');
+    badge.textContent='🔤 Name Search';badge.style.borderColor='#7c3aed';
+    badge.style.color='#7c3aed';badge.style.background='#f5f3ff';
+    document.getElementById('nfc').style.display='block';
+    document.getElementById('fcard').style.display='none';
+    document.getElementById('cloud-found-card').style.display='none';
+    document.getElementById('cloud-save-form').style.display='none';
+    document.getElementById('json-found-card').style.display='none';
+    document.getElementById('nf-gs1').style.display='none';
+    document.getElementById('nfm').textContent='"'+q+'" not found in Item Name';
+    beep(300,.3);
+  }
+}
+
+function hideAC(){
+  document.getElementById('ac-list').style.display='none';
+  acSelected=-1;
+}
+
+// ── IMPORT ───────────────────────────────────────────
+function importFile(e){
+  var file=e.target.files[0];if(!file)return;
+  if(typeof XLSX==='undefined'){toast('XLSX library not loaded.\nCheck internet.','err');return;}
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      var wb=XLSX.read(ev.target.result,{type:'binary'});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var rows=XLSX.utils.sheet_to_json(ws,{header:1});
+      if(rows.length<2){toast('File empty or no data rows.','err');return;}
+      headers=rows[0].map(function(h){return String(h==null?'':h).trim();}).filter(Boolean);
+      if(!headers.length){toast('No headers in row 1.','err');return;}
+      inventory=rows.slice(1).filter(function(r){
+        return r.some(function(c){return c!==undefined&&c!=='';});
+      }).map(function(row){
+        var o={
+          __code    :String(row[0]==null?'':row[0]).trim(),   // Col 1: Item Code
+          __barcode :String(row[1]==null?'':row[1]).trim(),   // Col 2: Barcode
+          __name    :String(row[2]==null?'':row[2]).trim()    // Col 3: Item Name
+        };
+        headers.forEach(function(h,i){o[h]=row[i]!==undefined?String(row[i]):'';});
+        return o;
+      });
+      updateBadge();renderInv();updateImp();clearRes();
+      toast('✓ Imported '+inventory.length+' products\nfrom "'+file.name+'"');
+      showTab('scan');
+    }catch(ex){toast('Failed to read file:\n'+ex.message,'err');}
+  };
+  reader.readAsBinaryString(file);
+  e.target.value='';
+}
+
+// ── INVENTORY LIST ────────────────────────────────────
+function renderInv(){
+  var q=(document.getElementById('search').value||'').toLowerCase();
+  var f=inventory.filter(function(item){
+    return Object.values(item).some(function(v){return String(v).toLowerCase().indexOf(q)>-1;});
+  });
+  document.getElementById('ie').style.display=inventory.length?'none':'block';
+  document.getElementById('bca').style.display=inventory.length?'block':'none';
+  var cnt=document.getElementById('ic');
+  if(inventory.length){cnt.style.display='block';cnt.textContent=f.length+' of '+inventory.length+' products';}
+  else cnt.style.display='none';
+  document.getElementById('il').innerHTML=f.map(function(i){
+    return '<div class="iitem" onclick="openProd(\''+esc(i.__code)+'\')">'
+      +'<div style="flex:1;min-width:0">'
+      +'<div class="icode">'+esc(i.__code||'—')+'</div>'
+      +(i.__name?'<div style="color:var(--text);font-size:13px;font-weight:600;margin-bottom:2px">'+esc(i.__name)+'</div>':'')
+      +'<div style="color:#f59e0b;font-size:12px;margin-bottom:2px;font-weight:500">📷 '+esc(i.__barcode||'—')+'</div>'
+      +'<div class="imeta">'+headers.slice(3,6).map(function(h){return i[h];}).filter(Boolean).join(' · ')+'</div>'
+      +'</div>'
+      +'<button class="bdel" onclick="event.stopPropagation();confirmDel(\''+esc(i.__code)+'\')">🗑</button>'
+      +'</div>';
+  }).join('');
+}
+
+function updateBadge(){
+  var b=document.getElementById('badge');
+  b.textContent=inventory.length+' items';
+  b.classList.toggle('on',inventory.length>0);
+}
+function updateImp(){
+  var box=document.getElementById('lbox');
+  if(inventory.length){
+    box.style.display='block';
+    document.getElementById('li2').textContent=inventory.length+' products · '+headers.length+' columns';
+    document.getElementById('lc2').textContent='Columns: '+headers.join(' · ');
+  }else box.style.display='none';
+}
+
+// ── JSON DATABASE ─────────────────────────────────────
+// Mirrors the Python app.py / products.json pattern
+// Supports: {"GTIN":"Name"} or {"GTIN":{"name":"…","brand":"…","unit":"…"}}
+var jsonDb={};       // GTIN (string) → {name, brand, unit, ...}
+var JSON_DB_KEY='inv_json_db';
+
+// Load persisted JSON DB on startup
+(function(){
+  try{
+    var saved=localStorage.getItem(JSON_DB_KEY);
+    if(saved){ jsonDb=JSON.parse(saved); updateJsonBadge(); refreshJsonStats(); }
+  }catch(e){}
+})();
+
+function importJson(e){
+  var file=e.target.files[0]; e.target.value='';
+  if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      var raw=JSON.parse(ev.target.result);
+      var count=0;
+      Object.keys(raw).forEach(function(gtin){
+        var val=raw[gtin];
+        if(typeof val==='string'){
+          jsonDb[String(gtin).trim()]={name:val,brand:'',unit:''};
+        } else if(typeof val==='object'&&val!==null){
+          jsonDb[String(gtin).trim()]={
+            name:val.name||val.product_name||val.title||'',
+            brand:val.brand||val.manufacturer||'',
+            unit:val.unit||val.pack||val.size||''
+          };
+        }
+        count++;
+      });
+      localStorage.setItem(JSON_DB_KEY,JSON.stringify(jsonDb));
+      updateJsonBadge();
+      refreshJsonStats();
+      toast('🗃️ JSON DB: '+count+' products loaded!');
+    }catch(ex){
+      toast('Invalid JSON file: '+ex.message,'err');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function jsonLookup(gtin){
+  if(!gtin||!Object.keys(jsonDb).length) return null;
+  var key=String(gtin).trim();
+  return jsonDb[key]||null;
+}
+
+function clearJsonDb(){
+  jsonDb={};
+  localStorage.removeItem(JSON_DB_KEY);
+  updateJsonBadge();
+  document.getElementById('json-lbox').style.display='none';
+  toast('JSON database cleared.');
+}
+
+function updateJsonBadge(){
+  var n=Object.keys(jsonDb).length;
+  var badge=document.getElementById('json-badge');
+  var cnt=document.getElementById('json-badge-count');
+  if(n>0){badge.style.display='flex';cnt.textContent=n;}
+  else badge.style.display='none';
+}
+
+function refreshJsonStats(){
+  var n=Object.keys(jsonDb).length;
+  if(!n){ document.getElementById('json-lbox').style.display='none'; return; }
+  document.getElementById('json-lbox').style.display='block';
+  document.getElementById('json-stats').textContent=n+' products in JSON database';
+  // Show 3 sample entries
+  var samples=Object.entries(jsonDb).slice(0,3).map(function(e){
+    return e[0]+' → '+e[1].name;
+  });
+  document.getElementById('json-sample').innerHTML=
+    '<strong>Sample:</strong><br>'+samples.map(function(s){return '• '+esc(s);}).join('<br>');
+}
+
+function showJsonFound(gtin, prod){
+  var card=document.getElementById('json-found-card');
+  var fields=document.getElementById('json-found-fields');
+  var rows=[
+    {k:'GTIN',v:gtin,c:'#6d28d9'},
+    {k:'Product Name',v:prod.name,c:'#1e293b'},
+    {k:'Brand',v:prod.brand,c:'#2563eb'},
+    {k:'Unit / Pack',v:prod.unit,c:'#d97706'},
+  ].filter(function(r){return r.v;});
+  fields.innerHTML=rows.map(function(r){
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #e9d5ff">'
+      +'<span style="color:#94a3b8;font-size:11px;font-weight:700;text-transform:uppercase">'+esc(r.k)+'</span>'
+      +'<span style="font-weight:700;font-size:14px;color:'+r.c+'">'+esc(r.v)+'</span>'
+      +'</div>';
+  }).join('');
+  card.style.display='block';
+  document.getElementById('cloud-save-form').style.display='none';
+  document.getElementById('cloud-found-card').style.display='none';
+}
+
+// ── DELETE ───────────────────────────────────────────
+function confirmDel(code){
+  delTarget=code;
+  document.getElementById('mdt').textContent='Delete Item?';
+  document.getElementById('mdm').textContent='Remove "'+code+'" from inventory?';
+  document.getElementById('bcd').onclick=doDel;
+  document.getElementById('mdel').style.display='flex';
+}
+function confirmClear(){
+  delTarget=null;
+  document.getElementById('mdt').textContent='Clear All Inventory?';
+  document.getElementById('mdm').textContent='Delete all '+inventory.length+' products? This cannot be undone.';
+  document.getElementById('bcd').onclick=doDel;
+  document.getElementById('mdel').style.display='flex';
+}
+function closeMDel(){document.getElementById('mdel').style.display='none';delTarget=null;}
+function doDel(){
+  if(delTarget){inventory=inventory.filter(function(i){return i.__code!==delTarget;});toast('Item deleted.');}
+  else{inventory=[];headers=[];clearRes();toast('Inventory cleared.');}
+  updateBadge();renderInv();updateImp();closeMDel();closeMProd();
+}
+
+// ── PRODUCT MODAL ─────────────────────────────────────
+function openProd(code){
+  var item=null;
+  for(var i=0;i<inventory.length;i++){if(inventory[i].__code===code){item=inventory[i];break;}}
+  if(!item)return;
+  selCode=code;
+  document.getElementById('mpf').innerHTML=
+    headers.map(function(h,i){
+      return '<div class="frow" style="'+(i===headers.length-1?'border-bottom:none':'')+'">'
+        +'<span class="fk">'+esc(h)+'</span>'
+        +'<span class="fv" style="color:'+fc(h)+'">'+esc(item[h]||'—')+'</span>'
+        +'</div>';
+    }).join('');
+  document.getElementById('bml').onclick=function(){lookup(code,'manual');closeMProd();showTab('scan');};
+  document.getElementById('bmd').onclick=function(){closeMProd();confirmDel(code);};
+  document.getElementById('mprod').style.display='flex';
+}
+function closeMProd(){document.getElementById('mprod').style.display='none';selCode=null;}
+
+// ── GITHUB DATABASE ───────────────────────────────────
+// Reads/writes products.json in a GitHub repo via GitHub Contents API
+// Format: { "GTIN": "Product Name", ... }
+
+var ghDb={};          // GTIN → name (in-memory cache from GitHub)
+var ghDbTotal=0;
+var ghFileSha='';     // needed for PUT (update file)
+var GH_CFG_KEY='inv_gh_cfg';
+
+var GH_CFG={owner:'',repo:'',path:'products.json',token:''};
+
+// ── Load saved config ─────────────────────────────────
+(function(){
+  try{
+    var s=localStorage.getItem(GH_CFG_KEY);
+    if(s){
+      var c=JSON.parse(s);
+      GH_CFG=Object.assign(GH_CFG,c);
+      if(document.getElementById('gh-owner')) document.getElementById('gh-owner').value=GH_CFG.owner||'';
+      if(document.getElementById('gh-repo'))  document.getElementById('gh-repo').value=GH_CFG.repo||'';
+      if(document.getElementById('gh-path'))  document.getElementById('gh-path').value=GH_CFG.path||'products.json';
+      if(document.getElementById('gh-token')) document.getElementById('gh-token').value=GH_CFG.token||'';
+    }
+  }catch(e){}
+  // Auto-sync if config is saved
+  if(GH_CFG.owner&&GH_CFG.repo) syncGithubDb(true);
+})();
+
+function saveGhConfig(){
+  GH_CFG.owner =(document.getElementById('gh-owner')||{}).value||'';
+  GH_CFG.repo  =(document.getElementById('gh-repo')||{}).value||'';
+  GH_CFG.path  =(document.getElementById('gh-path')||{}).value||'products.json';
+  GH_CFG.token =(document.getElementById('gh-token')||{}).value||'';
+  localStorage.setItem(GH_CFG_KEY,JSON.stringify(GH_CFG));
+}
+
+// ── GitHub API helpers ────────────────────────────────
+function ghApiUrl(){
+  return 'https://api.github.com/repos/'+GH_CFG.owner+'/'+GH_CFG.repo+'/contents/'+GH_CFG.path;
+}
+
+function ghHeaders(write){
+  var h={'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
+  if(write&&GH_CFG.token) h['Authorization']='Bearer '+GH_CFG.token;
+  return h;
+}
+
+// ── Fetch + parse products.json from GitHub ───────────
+async function fetchGhDb(){
+  var url=ghApiUrl();
+  var resp=await fetch(url,{headers:ghHeaders(false),cache:'no-store'});
+  if(!resp.ok) throw new Error('GitHub API '+resp.status+': '+resp.statusText);
+  var meta=await resp.json();
+  ghFileSha=meta.sha||'';
+  // content is base64 encoded
+  var raw=atob(meta.content.replace(/\n/g,''));
+  return JSON.parse(raw);
+}
+
+// ── Test & Sync ───────────────────────────────────────
+async function testGhConnection(){
+  saveGhConfig();
+  if(!GH_CFG.owner||!GH_CFG.repo){
+    setGhStatus('⚠️ Enter GitHub username and repository name','#d97706');return;
+  }
+  setGhStatus('🔄 Connecting to GitHub…','#2563eb');
+  try{
+    var data=await fetchGhDb();
+    var n=Object.keys(data).length;
+    ghDb=data;
+    ghDbTotal=n;
+    ghFileSha=ghFileSha;
+    updateGhBadge();
+    setGhStatus('✅ Connected! '+n+' products loaded','#16a34a');
+    updateGhStats(n);
+  }catch(e){
+    setGhStatus('❌ '+e.message,'#dc2626');
+  }
+}
+
+async function syncGithubDb(silent){
+  if(!GH_CFG.owner||!GH_CFG.repo) return;
+  try{
+    var data=await fetchGhDb();
+    ghDb=data;
+    ghDbTotal=Object.keys(data).length;
+    updateGhBadge();
+    updateGhStats(ghDbTotal);
+    if(!silent) toast('🐙 GitHub synced: '+ghDbTotal+' products');
+  }catch(e){
+    if(!silent) toast('GitHub sync failed: '+e.message,'err');
+  }
+}
+
+function setGhStatus(msg,color){
+  var el=document.getElementById('gh-status');
+  if(el){el.textContent=msg;el.style.color=color;}
+}
+
+function updateGhBadge(){
+  var ind=document.getElementById('cloud-indicator');
+  var cnt=document.getElementById('cloud-count');
+  if(ghDbTotal>0){ind.style.display='flex';cnt.textContent=ghDbTotal;}
+  else ind.style.display='none';
+}
+
+function updateGhStats(n){
+  var box=document.getElementById('gh-stats-box');
+  if(!box) return;
+  box.style.display='block';
+  document.getElementById('gh-stats-txt').textContent=n+' products in GitHub database';
+  document.getElementById('gh-stats-sub').textContent=
+    GH_CFG.owner+'/'+GH_CFG.repo+'/'+GH_CFG.path+' · Last sync: '+new Date().toLocaleTimeString();
+}
+
+// ── Lookup GTIN in GitHub DB ──────────────────────────
+// Returns product name string or null
+async function githubLookup(gtin){
+  if(!gtin) return null;
+  var key=String(gtin).trim();
+  // Check in-memory cache first
+  if(ghDb[key]) return ghDb[key];
+  // If not in cache and config set, do fresh fetch
+  if(GH_CFG.owner&&GH_CFG.repo){
+    try{
+      var fresh=await fetchGhDb();
+      ghDb=fresh;
+      ghDbTotal=Object.keys(fresh).length;
+      updateGhBadge();
+      if(ghDb[key]) return ghDb[key];
+    }catch(e){}
+  }
+  return null;
+}
+
+// ── Show GitHub found result ──────────────────────────
+// After finding GTIN→name in GitHub, search that name in local Excel
+function showGithubFound(gtin, productName, excelItem){
+  var card=document.getElementById('cloud-found-card');
+  var fields=document.getElementById('cloud-found-fields');
+
+  var html='<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #bbf7d0">'
+    +'<span style="color:#94a3b8;font-size:11px;font-weight:700;text-transform:uppercase">GTIN</span>'
+    +'<span style="font-weight:700;font-size:14px;color:#1d4ed8">'+esc(gtin)+'</span></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #bbf7d0">'
+    +'<span style="color:#94a3b8;font-size:11px;font-weight:700;text-transform:uppercase">Product Name</span>'
+    +'<span style="font-weight:700;font-size:14px;color:#14532d">'+esc(productName)+'</span></div>';
+
+  if(excelItem){
+    // Full Excel details found by name lookup
+    html+='<div style="margin-top:8px;padding:8px 10px;background:#dcfce7;border-radius:8px;font-size:11px;font-weight:700;color:#166534;letter-spacing:.5px;margin-bottom:4px">✓ MATCHED IN YOUR EXCEL</div>';
+    headers.forEach(function(h,i){
+      html+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #bbf7d0">'
+        +'<span style="color:#94a3b8;font-size:11px;font-weight:700;text-transform:uppercase">'+esc(h)+'</span>'
+        +'<span style="font-weight:700;font-size:13px;color:'+fc(h)+'">'+esc(excelItem[h]||'—')+'</span>'
+        +'</div>';
+    });
+  }else if(inventory.length){
+    html+='<div style="margin-top:8px;padding:8px;background:#fef9c3;border-radius:8px;font-size:12px;color:#854d0e;font-weight:600">'
+      +'⚠️ Name not matched in your local Excel. Import the correct Excel file for full details.'
+      +'</div>';
+  }else{
+    html+='<div style="margin-top:8px;padding:8px;background:#fef9c3;border-radius:8px;font-size:12px;color:#854d0e;font-weight:600">'
+      +'📋 No local Excel loaded. Import your inventory Excel to see full product details.'
+      +'</div>';
+  }
+
+  fields.innerHTML=html;
+  card.style.display='block';
+  document.getElementById('cloud-save-form').style.display='none';
+}
+
+// ── Show save form ────────────────────────────────────
+function showCloudSaveForm(gtin){
+  if(!GH_CFG.owner||!GH_CFG.repo){
+    document.getElementById('gh-no-token-msg').style.display='block';
+    document.getElementById('cloud-save-form').style.display='block';
+    document.getElementById('cloud-found-card').style.display='none';
+    document.getElementById('cs-status').textContent='';
+    csNameClear();
+    var el=document.getElementById('gh-save-gtin');
+    if(el) el.textContent=gtin;
+    return;
+  }
+  document.getElementById('cloud-save-form').style.display='block';
+  document.getElementById('cloud-found-card').style.display='none';
+  document.getElementById('cs-status').textContent='';
+  csNameClear();
+  document.getElementById('gh-no-token-msg').style.display=GH_CFG.token?'none':'block';
+  var el=document.getElementById('gh-save-gtin');
+  if(el) el.textContent=gtin;
+}
+
+// ── CS-NAME AUTOCOMPLETE (from local Excel) ───────────
+var csAcIdx=-1; // keyboard-nav index
+
+function csNameInput(val){
+  var inp=document.getElementById('cs-name');
+  var clearBtn=document.getElementById('cs-name-clear');
+  if(clearBtn) clearBtn.style.display=val?'inline':'none';
+  csAcIdx=-1;
+  if(!val||val.trim().length<1){ csHideAc(); return; }
+  if(!inventory.length){ csHideAc(); return; }
+
+  var q=val.trim().toLowerCase();
+  var seen={}, matches=[];
+
+  for(var i=0;i<inventory.length&&matches.length<10;i++){
+    var candidates=[
+      inventory[i].__name||'',
+      headers[2]?inventory[i][headers[2]]||'':'',
+      headers[0]?inventory[i][headers[0]]||'':''
+    ];
+    for(var c=0;c<candidates.length;c++){
+      var nm=String(candidates[c]).trim();
+      if(!nm||seen[nm.toLowerCase()]) continue;
+      if(nm.toLowerCase().indexOf(q)>-1){
+        seen[nm.toLowerCase()]=true;
+        matches.push({name:nm, item:inventory[i]});
+        break;
+      }
+    }
+  }
+
+  if(!matches.length){ csHideAc(); return; }
+
+  var list=document.getElementById('cs-ac-list');
+  list.innerHTML=matches.map(function(m,idx){
+    var rawName=m.name;
+    var lo=rawName.toLowerCase().indexOf(q);
+    var highlighted=lo>-1
+      ? esc(rawName.slice(0,lo))
+        +'<span style="background:#dcfce7;color:#15803d;font-weight:800;border-radius:3px;padding:0 2px">'+esc(rawName.slice(lo,lo+q.length))+'</span>'
+        +esc(rawName.slice(lo+q.length))
+      : esc(rawName);
+    var sub=esc(m.item.__code||'');
+    return '<div class="cs-ac-item" data-idx="'+idx+'" onmousedown="csAcPick(\''+esc(m.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'"))+'\')" ontouchend="event.preventDefault();csAcPick(\''+esc(m.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'"))+'\')">'
+      +'<div style="font-size:14px;font-weight:600;color:#1e293b">'+highlighted+'</div>'
+      +(sub?'<div style="font-size:11px;color:#94a3b8;margin-top:1px">Code: '+sub+'</div>':'')
+      +'</div>';
+  }).join('');
+
+  // Position dropdown using fixed coords from input's screen position
+  csPositionDropdown();
+  list.style.display='block';
+}
+
+// Position the fixed dropdown below (or above) the cs-name input
+function csPositionDropdown(){
+  var inp=document.getElementById('cs-name');
+  var list=document.getElementById('cs-ac-list');
+  if(!inp||!list) return;
+  var r=inp.getBoundingClientRect();
+  var vw=window.innerWidth||document.documentElement.clientWidth;
+  var vh=window.innerHeight||document.documentElement.clientHeight;
+
+  // Width matches input, max 400px
+  var w=Math.min(r.width, 400);
+  list.style.width=w+'px';
+  list.style.left=Math.max(4,Math.min(r.left, vw-w-4))+'px';
+
+  // Open below if space, otherwise open above
+  var spaceBelow=vh-r.bottom-8;
+  var maxH=Math.min(220, spaceBelow>120?spaceBelow:Math.min(180,r.top-8));
+  if(spaceBelow>120){
+    list.style.top=(r.bottom+3)+'px';
+    list.style.bottom='auto';
+  }else{
+    list.style.bottom=(vh-r.top+3)+'px';
+    list.style.top='auto';
+  }
+  list.style.maxHeight=Math.max(80,maxH)+'px';
+}
+
+function csNameKey(e){
+  var list=document.getElementById('cs-ac-list');
+  var items=list.querySelectorAll('.cs-ac-item');
+  if(!items.length) return;
+  if(e.key==='ArrowDown'){
+    e.preventDefault();
+    csAcIdx=Math.min(csAcIdx+1,items.length-1);
+    csHighlight(items);
+  }else if(e.key==='ArrowUp'){
+    e.preventDefault();
+    csAcIdx=Math.max(csAcIdx-1,0);
+    csHighlight(items);
+  }else if(e.key==='Enter'){
+    e.preventDefault();
+    if(csAcIdx>=0&&items[csAcIdx]){
+      var name=items[csAcIdx].querySelector('div').textContent;
+      csAcPick(name);
+    }else if(document.getElementById('cs-name').value.trim()){
+      csHideAc();
+    }
+  }else if(e.key==='Escape'){
+    csHideAc();
+  }
+}
+
+function csHighlight(items){
+  items.forEach(function(el,i){
+    el.style.background=i===csAcIdx?'#f0fdf4':'';
+  });
+  if(items[csAcIdx]) items[csAcIdx].scrollIntoView({block:'nearest'});
+}
+
+function csAcPick(name){
+  var inp=document.getElementById('cs-name');
+  inp.value=name;
+  var clearBtn=document.getElementById('cs-name-clear');
+  if(clearBtn) clearBtn.style.display='inline';
+  csHideAc();
+  inp.focus();
+}
+
+function csHideAc(){
+  var list=document.getElementById('cs-ac-list');
+  if(list) list.style.display='none';
+  csAcIdx=-1;
+}
+
+function csNameClear(){
+  var inp=document.getElementById('cs-name');
+  if(inp) inp.value='';
+  var clearBtn=document.getElementById('cs-name-clear');
+  if(clearBtn) clearBtn.style.display='none';
+  csHideAc();
+}
+
+function closeCsSaveForm(){
+  document.getElementById('cloud-save-form').style.display='none';
+  csHideAc();
+}
+
+// Reposition cs-ac-list when user scrolls (keeps it aligned with fixed input)
+document.getElementById('main').addEventListener('scroll',function(){
+  if(document.getElementById('cs-ac-list').style.display!=='none'){
+    csPositionDropdown();
+  }
+},true);
+
+// Close AC when clicking/touching outside
+document.addEventListener('click',function(e){
+  if(!e.target.closest('#cloud-save-form')&&!e.target.closest('#cs-ac-list')) csHideAc();
+});
+document.addEventListener('touchend',function(e){
+  if(!e.target.closest('#cloud-save-form')&&!e.target.closest('#cs-ac-list')) csHideAc();
+});
+
+// ── SAVE TO GITHUB ────────────────────────────────────
+async function saveToGithub(){
+  var gtin=document.getElementById('lcode').textContent.trim();
+  var name=document.getElementById('cs-name').value.trim();
+  var status=document.getElementById('cs-status');
+
+  if(!gtin){status.style.color='#dc2626';status.textContent='❌ No GTIN detected';return;}
+  if(!name){status.style.color='#dc2626';status.textContent='❌ Product name is required';return;}
+  if(!GH_CFG.token){status.style.color='#d97706';status.textContent='⚠️ GitHub token required — set up in GitHub DB tab';return;}
+  if(!GH_CFG.owner||!GH_CFG.repo){status.style.color='#d97706';status.textContent='⚠️ Configure GitHub repo in GitHub DB tab';return;}
+
+  status.style.color='#2563eb';status.textContent='🔄 Fetching current file…';
+
+  try{
+    // 1. Get latest file content + SHA
+    var currentData={};
+    try{
+      var latest=await fetchGhDb();
+      currentData=latest;
+    }catch(e){
+      // File might not exist yet — start fresh
+      currentData={};
+      ghFileSha='';
+    }
+
+    // 2. Check duplicate
+    if(currentData[gtin]){
+      status.style.color='#d97706';
+      status.textContent='⚠️ GTIN already exists: "'+currentData[gtin]+'"';
+      return;
+    }
+
+    // 3. Add new entry
+    currentData[gtin]=name;
+    var newContent=JSON.stringify(currentData,null,2);
+
+    // 4. Base64 encode
+    var b64=btoa(unescape(encodeURIComponent(newContent)));
+
+    // 5. PUT to GitHub
+    status.textContent='🔄 Saving to GitHub…';
+    var body={
+      message:'Add GTIN '+gtin+' ('+name+')',
+      content:b64
+    };
+    if(ghFileSha) body.sha=ghFileSha;
+
+    var resp=await fetch(ghApiUrl(),{
+      method:'PUT',
+      headers:Object.assign({'Content-Type':'application/json'},ghHeaders(true)),
+      body:JSON.stringify(body)
+    });
+    var result=await resp.json();
+
+    if(resp.ok){
+      // Update local cache
+      ghDb[gtin]=name;
+      ghDbTotal=Object.keys(ghDb).length;
+      ghFileSha=(result.content&&result.content.sha)||ghFileSha;
+      updateGhBadge();
+      updateGhStats(ghDbTotal);
+      beep(1200,.15);
+      status.style.color='#16a34a';
+      status.textContent='✅ Saved! "'+name+'" added to GitHub.';
+      setTimeout(function(){
+        document.getElementById('cloud-save-form').style.display='none';
+        showGithubFound(gtin,name,null);
+      },1200);
+    }else{
+      var msg=(result.message)||'Unknown error';
+      status.style.color='#dc2626';
+      status.textContent='❌ GitHub error: '+msg;
+    }
+  }catch(e){
+    status.style.color='#dc2626';
+    status.textContent='❌ '+e.message;
+  }
+}
+
+// Keep these stubs so old references don't break
+function getGasUrl(){ return ''; }
+function showCloudFound(prod){
+  showGithubFound(prod.gtin||'',prod.name||'',null);
+}
+</script>
+</body>
+</html>
